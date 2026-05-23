@@ -2,6 +2,7 @@
 # 🦾 Anos — AI Native OS
 # Install script — user-space only, no root needed.
 # Usage: curl -fsSL https://raw.githubusercontent.com/datnp1003/anos/main/install.sh | bash
+# Dev:   ANOS_BRANCH=dev_lor curl -fsSL https://raw.githubusercontent.com/datnp1003/anos/dev_lor/install.sh | bash
 set -e
 
 echo "🦾 Anos — AI Native OS Installer"
@@ -19,6 +20,7 @@ fi
 # Determine install dir
 INSTALL_DIR="${ANOS_INSTALL_DIR:-$HOME/.anos}"
 BIN_DIR="${ANOS_BIN_DIR:-$HOME/.local/bin}"
+ANOS_BRANCH="${ANOS_BRANCH:-main}"
 
 mkdir -p "$BIN_DIR"
 
@@ -32,13 +34,16 @@ fi
 echo "✅ Rust: $(rustc --version)"
 
 # Clone Anos
-if [ -d "$INSTALL_DIR" ]; then
-    echo "📦 Updating Anos..."
+if [ -d "$INSTALL_DIR/.git" ]; then
+    echo "📦 Updating Anos ($ANOS_BRANCH)..."
     cd "$INSTALL_DIR"
-    git pull --ff-only origin main || true
+    git fetch origin "$ANOS_BRANCH"
+    git checkout "$ANOS_BRANCH"
+    git pull --ff-only origin "$ANOS_BRANCH"
 else
-    echo "📦 Cloning Anos..."
-    git clone https://github.com/datnp1003/anos.git "$INSTALL_DIR"
+    echo "📦 Cloning Anos ($ANOS_BRANCH)..."
+    rm -rf "$INSTALL_DIR"
+    git clone --branch "$ANOS_BRANCH" https://github.com/datnp1003/anos.git "$INSTALL_DIR"
     cd "$INSTALL_DIR"
 fi
 
