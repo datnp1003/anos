@@ -1,0 +1,26 @@
+# Changelog
+
+## v0.1.0 — 2026-05-23
+
+Initial public release. First PoC with core features working.
+
+### Added
+- 🦾 `anosd` — Rust daemon with Unix socket IPC
+- 💻 `anos-cli` — Interactive CLI with rustyline, colors, one-shot mode
+- 🗺️ **SystemMap** — Live OS state graph (CPU, RAM, disk, processes)
+- 🔌 **6 AI Providers** — DeepSeek, Claude, OpenAI, Ollama, Codex, Groq
+- 🔄 **Hot-switch** `/model <id>` to change providers in real-time
+- 🛠️ **3 System Tools** — Package (install/remove/update/search), Process (list/kill), Service (start/stop/restart/logs)
+- 🛡️ **Permission System** — 4 levels (ReadOnly, Safe, Confirm, Dangerous)
+- 📋 **10 Domain Skills** — package, system, network, filesystem, process, kernel, security, self-upgrade, gui, provider
+- 🇻🇳 **Vietnamese + English** natural language support
+- 🚀 **Install script** — `curl | bash`, user-space only, zero sudo
+- 📄 README with usage examples and troubleshooting
+
+### Technical
+- Architecture: 5-layer (Conversation → AI Brain → Provider → Tools → Kernel)
+- Communication: Unix socket with streaming markers `[THINKING]/[END]`
+- Providers: OpenAI-compatible API format (works with Ollama, vLLM, OpenRouter, etc.)
+- Auto-loads API key from OpenClaw config or `ANOS_API_KEY` env var
+- Built with Rust (daemon 7.2K lines, CLI 4.3K lines)
+- MIT License
