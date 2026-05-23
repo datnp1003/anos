@@ -1,16 +1,18 @@
 use anyhow::Result;
 use colored::*;
 use rustyline::DefaultEditor;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::UnixStream;
-use tokio::net::unix::OwnedReadHalf;
 use std::{env, path::PathBuf};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::unix::OwnedReadHalf;
+use tokio::net::UnixStream;
 
 const SOCKET: &str = "/tmp/anos.sock";
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let sock = env::var("ANOS_SOCKET").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from(SOCKET));
+    let sock = env::var("ANOS_SOCKET")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(SOCKET));
     let args: Vec<String> = env::args().collect();
 
     if args.len() > 1 {
@@ -25,22 +27,35 @@ async fn one_shot(sock: &PathBuf, msg: &str) -> Result<()> {
     let stream = UnixStream::connect(sock).await?;
     let (reader, mut writer) = stream.into_split();
     let mut buf = BufReader::new(reader);
-    let mut g = String::new(); buf.read_line(&mut g).await?;
-    writer.write_all(format!("{}\n/exit\n", msg).as_bytes()).await?;
+    let mut g = String::new();
+    buf.read_line(&mut g).await?;
+    writer
+        .write_all(format!("{}\n/exit\n", msg).as_bytes())
+        .await?;
     read_response(&mut buf).await?;
     Ok(())
 }
 
 async fn interactive(sock: &PathBuf) -> Result<()> {
-    println!("\n{}", "╭──────────────────────────────────╮".bright_black());
-    println!("{}", format!("│  🦾  Anos — AI Native OS CLI      │").bright_yellow().bold());
+    println!(
+        "\n{}",
+        "╭──────────────────────────────────╮".bright_black()
+    );
+    println!(
+        "{}",
+        "│  🦾  Anos — AI Native OS CLI      │"
+            .to_string()
+            .bright_yellow()
+            .bold()
+    );
     println!("{}", "│  /help /model /providers /exit   │".dimmed());
     println!("{}", "╰──────────────────────────────────╯".bright_black());
 
     let stream = UnixStream::connect(sock).await?;
     let (reader, mut writer) = stream.into_split();
     let mut buf = BufReader::new(reader);
-    let mut g = String::new(); buf.read_line(&mut g).await?;
+    let mut g = String::new();
+    buf.read_line(&mut g).await?;
     println!("{}", g.trim().dimmed());
 
     let mut rl = DefaultEditor::new()?;
@@ -49,18 +64,45 @@ async fn interactive(sock: &PathBuf) -> Result<()> {
     loop {
         let line = match rl.readline("\x1b[1;33manos>\x1b[0m ") {
             Ok(l) => l,
-            Err(rustyline::error::ReadlineError::Interrupted|rustyline::error::ReadlineError::Eof) => { println!("\nBye!"); break; }
+            Err(
+                rustyline::error::ReadlineError::Interrupted | rustyline::error::ReadlineError::Eof,
+            ) => {
+                println!("\nBye!");
+                break;
+            }
             Err(_) => break,
         };
         let t = line.trim();
-        if t.is_empty() { continue; }
-        match t {
-            "/help"|"/h" => { let _ = rl.add_history_entry(t); show_help(); continue; }
-            "/clear"|"/c" => { let _ = rl.add_history_entry(t); print!("\x1b[2J\x1b[H"); continue; }
-            _ => { let _ = rl.add_history_entry(t); }
+        if t.is_empty() {
+            continue;
         }
-        if writer.write_all(format!("{}\n", t).as_bytes()).await.is_err() { eprintln!("{}", "Connection lost".red()); break; }
-        if read_response(&mut buf).await.is_err() { eprintln!("{}", "Connection lost".red()); break; }
+        match t {
+            "/help" | "/h" => {
+                let _ = rl.add_history_entry(t);
+                show_help();
+                continue;
+            }
+            "/clear" | "/c" => {
+                let _ = rl.add_history_entry(t);
+                print!("\x1b[2J\x1b[H");
+                continue;
+            }
+            _ => {
+                let _ = rl.add_history_entry(t);
+            }
+        }
+        if writer
+            .write_all(format!("{}\n", t).as_bytes())
+            .await
+            .is_err()
+        {
+            eprintln!("{}", "Connection lost".red());
+            break;
+        }
+        if read_response(&mut buf).await.is_err() {
+            eprintln!("{}", "Connection lost".red());
+            break;
+        }
     }
     let _ = rl.save_history("/tmp/anos-history.txt");
     Ok(())
@@ -71,31 +113,82 @@ async fn read_response(reader: &mut BufReader<OwnedReadHalf>) -> Result<()> {
     let mut thinking = false;
     loop {
         line.clear();
-        if reader.read_line(&mut line).await? == 0 { break; }
+        if reader.read_line(&mut line).await? == 0 {
+            break;
+        }
         let t = line.trim();
-        if t == "[END]" { println!(); break; }
-        if t == "[THINKING]" { thinking = true; eprint!("{} ", "🤔".dimmed()); continue; }
-        if t.starts_with(">> ") {
-            let c = &t[3..];
-            if c.starts_with("🔧") || c.starts_with("⚠️") || c.starts_with("❌") { println!("{}", c); }
-            else if thinking { eprint!("\r\x1b[K\r"); print!("{}", "anos> ".bright_yellow()); print!("{}", c); thinking = false; }
-            else { print!("{}", c); }
+        if t == "[END]" {
+            println!();
+            break;
+        }
+        if t == "[THINKING]" {
+            thinking = true;
+            eprint!("{} ", "🤔".dimmed());
+            continue;
+        }
+        if let Some(c) = t.strip_prefix(">> ") {
+            if c.starts_with("🔧") || c.starts_with("⚠️") || c.starts_with("❌") {
+                println!("{}", c);
+            } else if thinking {
+                eprint!("\r\x1b[K\r");
+                print!("{}", "anos> ".bright_yellow());
+                print!("{}", c);
+                thinking = false;
+            } else {
+                print!("{}", c);
+            }
         }
     }
     Ok(())
 }
 
 fn show_help() {
-    println!("\n{}", "┌─ Commands ──────────────────────────┐".bright_black());
-    println!("{}", "│  /help          — Show this          │".bright_black());
-    println!("{}", "│  /exit, /quit   — Quit               │".bright_black());
-    println!("{}", "│  /clear         — Clear screen       │".bright_black());
-    println!("{}", "│  /providers, /p — List AI providers  │".bright_black());
-    println!("{}", "│  /model         — Show current       │".bright_black());
-    println!("{}", "│  /model <id>    — Switch provider    │".bright_black());
-    println!("{}", "│  /tools         — List tools         │".bright_black());
-    println!("{}", "│  • Còn bao nhiêu disk trống?        │".bright_black());
-    println!("{}", "│  • Process nào tốn CPU?             │".bright_black());
-    println!("{}", "│  • Cài Neovim                       │".bright_black());
-    println!("{}", "└──────────────────────────────────────┘\n".bright_black());
+    println!(
+        "\n{}",
+        "┌─ Commands ──────────────────────────┐".bright_black()
+    );
+    println!(
+        "{}",
+        "│  /help          — Show this          │".bright_black()
+    );
+    println!(
+        "{}",
+        "│  /exit, /quit   — Quit               │".bright_black()
+    );
+    println!(
+        "{}",
+        "│  /clear         — Clear screen       │".bright_black()
+    );
+    println!(
+        "{}",
+        "│  /providers, /p — List AI providers  │".bright_black()
+    );
+    println!(
+        "{}",
+        "│  /model         — Show current       │".bright_black()
+    );
+    println!(
+        "{}",
+        "│  /model <id>    — Switch provider    │".bright_black()
+    );
+    println!(
+        "{}",
+        "│  /tools         — List tools         │".bright_black()
+    );
+    println!(
+        "{}",
+        "│  • Còn bao nhiêu disk trống?        │".bright_black()
+    );
+    println!(
+        "{}",
+        "│  • Process nào tốn CPU?             │".bright_black()
+    );
+    println!(
+        "{}",
+        "│  • Cài Neovim                       │".bright_black()
+    );
+    println!(
+        "{}",
+        "└──────────────────────────────────────┘\n".bright_black()
+    );
 }

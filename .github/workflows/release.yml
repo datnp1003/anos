@@ -1,0 +1,66 @@
+name: Release Artifacts
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to upload assets to, e.g. v0.1.1-dev.1'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  linux-arm64:
+    name: Build linux-arm64 artifacts
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            anosd
+            anos-cli
+
+      - name: Build anosd
+        working-directory: anosd
+        run: cargo build --release
+
+      - name: Build anos-cli
+        working-directory: anos-cli
+        run: cargo build --release
+
+      - name: Package artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp anosd/target/release/anosd dist/anosd-linux-arm64
+          cp anos-cli/target/release/anos-cli dist/anos-cli-linux-arm64
+          cp install.sh dist/install.sh
+          chmod +x dist/anosd-linux-arm64 dist/anos-cli-linux-arm64 dist/install.sh
+          sha256sum dist/* > dist/SHA256SUMS
+          ls -lh dist
+
+      - name: Upload artifacts to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG_NAME" \
+            dist/anosd-linux-arm64 \
+            dist/anos-cli-linux-arm64 \
+            dist/install.sh \
+            dist/SHA256SUMS \
+            --clobber
