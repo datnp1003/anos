@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.1.1-dev.1 — 2026-05-23
+
+Development prerelease from `dev_lor`.
+
+### Added
+- 📁 **FileSystemTool** — `list`, `read`, `find`, `disk_usage`, `mkdir`, `write`
+- 🌐 **NetworkTool** — `interfaces`, `listening_ports`, `routes`, `ping`, `dns_lookup`
+- 🛡️ **Pending confirmation flow** for dangerous/confirm-required tools
+  - `yes`, `y`, `ok`, `đồng ý`, `làm đi`, `confirm` execute pending action
+  - `no`, `cancel`, `hủy`, `không` cancel pending action
+- 🔧 OpenAI-compatible tool schemas are now sent in chat requests
+
+### Changed
+- `/tools` now lists 5 tools: package, process, service, filesystem, network
+- README examples updated for filesystem and network usage
+- Build warnings cleaned up in core modules
+
+### Verified
+- `anosd` build OK
+- `anos-cli` build OK
+- Socket smoke tests: `/ping`, `/tools`
+
 ## v0.1.0 — 2026-05-23
 
 Initial public release. First PoC with core features working.
