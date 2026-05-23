@@ -7,8 +7,8 @@ Anos is an AI-native Linux OS where the AI doesn't just *run on* the OS — it *
 - 🗣️ **Natural Language** — Talk to your OS in Vietnamese or English
 - 🗺️ **SystemMap** — Live OS state graph (CPU, RAM, disk, processes) fed to AI
 - 🔧 **Tool System** — AI can actually DO things: install packages, manage processes, control services
-- 🔌 **Multi-Provider** — DeepSeek, Claude, OpenAI, Ollama, Codex, Groq — hot-switch anytime
-- 🎯 **Intent Routing** — System actions → local LLM, code → Codex, reasoning → Claude
+- 🔌 **Multi-Provider** — DeepSeek, Claude, OpenAI, Ollama, Groq, or any OpenAI-compatible API — hot-switch anytime
+- 🎯 **Intent Routing** — System actions → local/provider LLM, reasoning → stronger cloud models
 - 🛡️ **Permission System** — 4 levels (ReadOnly, Safe, Confirm, Dangerous) with audit logging
 - 🔄 **Self-Evolving** — AI can upgrade the OS, kernel, and itself
 
@@ -78,7 +78,9 @@ providers:
     api_key_env: ANOS_API_KEY
 ```
 
-Any OpenAI-compatible API works — Ollama, vLLM, OpenRouter, Groq, etc.
+Any OpenAI-compatible HTTP API works — Ollama, vLLM, OpenRouter, Groq, etc.
+
+> Note: Codex/ACP is not enabled as a default provider yet because it is not an OpenAI-compatible HTTP endpoint. A dedicated ACP adapter is planned.
 
 ### API Key
 
@@ -146,7 +148,7 @@ anos
 │  Intent • Context • Memory • Tools  │
 ├─────────────────────────────────────┤
 │  🔌 Provider Adapters               │
-│  DeepSeek • Claude • OpenAI • ...   │
+│  OpenAI-compatible HTTP APIs        │
 ├─────────────────────────────────────┤
 │  ⚙️ System Actions                  │
 │  Package • Process • Service • ...  │
@@ -171,7 +173,7 @@ anos/
 │       ├── provider.rs      # Multi-provider registry
 │       ├── context.rs       # Prompt + skill loader
 │       ├── systemmap.rs     # Live OS state graph
-│       ├── tools.rs         # Package, Process, Service tools
+│       ├── tools.rs         # Package, Process, Service, FileSystem, Network tools
 │       └── ipc.rs           # Unix socket IPC
 └── anos-cli/                # Rust CLI client
     └── src/main.rs          # Interactive + one-shot

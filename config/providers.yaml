@@ -33,12 +33,9 @@ providers:
     model: llama-4-8b-q8
     priority: 4
 
-  - id: codex
-    name: Codex / ACP
-    type: openai-compatible
-    endpoint: unix:///run/anos/codex.sock
-    model: codex-default
-    priority: 5
+  # Codex/ACP is intentionally not listed as a default provider yet.
+  # Anos providers currently require OpenAI-compatible HTTP APIs.
+  # A dedicated ACP adapter is planned for a future release.
 
   - id: groq
     name: Groq (Fast)

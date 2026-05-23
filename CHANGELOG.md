@@ -16,6 +16,7 @@ Development prerelease from `dev_lor`.
 - `/tools` now lists 5 tools: package, process, service, filesystem, network
 - README examples updated for filesystem and network usage
 - Build warnings cleaned up in core modules
+- Removed Codex/ACP placeholder from default provider config; future ACP support needs a dedicated adapter
 
 ### Verified
 - `anosd` build OK
