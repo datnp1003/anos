@@ -1,5 +1,76 @@
 # Changelog
 
+## v0.2.0 — 2026-05-23
+
+Stable Phase 2 release promoted from `dev_lor`.
+
+### Added
+- 📁 **FileSystemTool** — `list`, `read`, `find`, `disk_usage`, `mkdir`, `write`
+- 🌐 **NetworkTool** — `interfaces`, `listening_ports`, `routes`, `ping`, `dns_lookup`
+- 🛡️ **Pending confirmation flow** for confirm-required/dangerous tools
+- 🔁 **Agentic tool result loop** — tool outputs are fed back to the model for final natural-language answers
+- 📦 **Binary-first installer** with source-build fallback
+- 🏗️ **GitHub Actions CI + multi-arch release workflow**
+  - `linux-arm64`
+  - `linux-x86_64`
+
+### Changed
+- `/tools` now lists 5 tools: package, process, service, filesystem, network
+- Installer supports `ANOS_BRANCH`, `ANOS_VERSION`, and arch-aware release downloads
+- Provider docs now clarify OpenAI-compatible HTTP API contract
+- Removed non-functional Codex/ACP placeholder from default providers; ACP adapter is future work
+- Rust sources formatted and clippy-cleaned
+
+### Verified
+- `dev_lor` CI succeeded before promotion
+- `anosd` fmt/clippy/test/build OK
+- `anos-cli` fmt/clippy/test/build OK
+- Release artifact workflow produced arm64 + x86_64 binaries for dev release
+- Binary install path tested against `v0.1.2-dev.1`
+
+## v0.1.2-dev.1 — 2026-05-23
+
+Development prerelease from `dev_lor` for Phase 2 hardening.
+
+### Added
+- 🔁 **Agentic tool result loop** — tool outputs are fed back to the model so it can produce a final natural-language answer
+- 📦 **Binary-first installer** — tries release binaries first, then falls back to user-space source build
+- 🏗️ **Multi-arch release workflow** — builds/uploads `linux-arm64` and `linux-x86_64` release artifacts
+
+### Changed
+- 🧹 Removed non-functional Codex/ACP placeholder from default providers
+- Clarified provider contract: default providers must be OpenAI-compatible HTTP APIs
+- Installer supports `ANOS_VERSION` and arch-aware binary downloads
+
+### Verified
+- Latest `dev_lor` CI succeeded
+- `anosd` fmt/clippy/test/build OK
+- `anos-cli` fmt/clippy/test/build OK
+- Binary install path tested against `v0.1.1-dev.1`
+
+## v0.1.1-dev.1 — 2026-05-23
+
+Development prerelease from `dev_lor`.
+
+### Added
+- 📁 **FileSystemTool** — `list`, `read`, `find`, `disk_usage`, `mkdir`, `write`
+- 🌐 **NetworkTool** — `interfaces`, `listening_ports`, `routes`, `ping`, `dns_lookup`
+- 🛡️ **Pending confirmation flow** for dangerous/confirm-required tools
+  - `yes`, `y`, `ok`, `đồng ý`, `làm đi`, `confirm` execute pending action
+  - `no`, `cancel`, `hủy`, `không` cancel pending action
+- 🔧 OpenAI-compatible tool schemas are now sent in chat requests
+
+### Changed
+- `/tools` now lists 5 tools: package, process, service, filesystem, network
+- README examples updated for filesystem and network usage
+- Build warnings cleaned up in core modules
+- Removed Codex/ACP placeholder from default provider config; future ACP support needs a dedicated adapter
+
+### Verified
+- `anosd` build OK
+- `anos-cli` build OK
+- Socket smoke tests: `/ping`, `/tools`
+
 ## v0.1.0 — 2026-05-23
 
 Initial public release. First PoC with core features working.
@@ -10,7 +81,7 @@ Initial public release. First PoC with core features working.
 - 🗺️ **SystemMap** — Live OS state graph (CPU, RAM, disk, processes)
 - 🔌 **6 AI Providers** — DeepSeek, Claude, OpenAI, Ollama, Codex, Groq
 - 🔄 **Hot-switch** `/model <id>` to change providers in real-time
-- 🛠️ **3 System Tools** — Package (install/remove/update/search), Process (list/kill), Service (start/stop/restart/logs)
+- 🛠️ **5 System Tools** — Package, Process, Service, FileSystem, Network
 - 🛡️ **Permission System** — 4 levels (ReadOnly, Safe, Confirm, Dangerous)
 - 📋 **10 Domain Skills** — package, system, network, filesystem, process, kernel, security, self-upgrade, gui, provider
 - 🇻🇳 **Vietnamese + English** natural language support
