@@ -15,9 +15,17 @@ permissions:
   contents: write
 
 jobs:
-  linux-arm64:
-    name: Build linux-arm64 artifacts
-    runs-on: ubuntu-24.04-arm
+  linux:
+    name: Build ${{ matrix.artifact_arch }} artifacts
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            artifact_arch: arm64
+          - runner: ubuntu-latest
+            artifact_arch: x86_64
 
     steps:
       - name: Checkout
@@ -29,6 +37,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
+          key: ${{ matrix.artifact_arch }}
           workspaces: |
             anosd
             anos-cli
@@ -45,11 +54,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp anosd/target/release/anosd dist/anosd-linux-arm64
-          cp anos-cli/target/release/anos-cli dist/anos-cli-linux-arm64
+          cp anosd/target/release/anosd "dist/anosd-linux-${{ matrix.artifact_arch }}"
+          cp anos-cli/target/release/anos-cli "dist/anos-cli-linux-${{ matrix.artifact_arch }}"
           cp install.sh dist/install.sh
-          chmod +x dist/anosd-linux-arm64 dist/anos-cli-linux-arm64 dist/install.sh
-          sha256sum dist/* > dist/SHA256SUMS
+          chmod +x "dist/anosd-linux-${{ matrix.artifact_arch }}" "dist/anos-cli-linux-${{ matrix.artifact_arch }}" dist/install.sh
+          sha256sum dist/* > "dist/SHA256SUMS-linux-${{ matrix.artifact_arch }}"
           ls -lh dist
 
       - name: Upload artifacts to GitHub release
@@ -59,8 +68,8 @@ jobs:
         run: |
           set -euo pipefail
           gh release upload "$TAG_NAME" \
-            dist/anosd-linux-arm64 \
-            dist/anos-cli-linux-arm64 \
+            "dist/anosd-linux-${{ matrix.artifact_arch }}" \
+            "dist/anos-cli-linux-${{ matrix.artifact_arch }}" \
             dist/install.sh \
-            dist/SHA256SUMS \
+            "dist/SHA256SUMS-linux-${{ matrix.artifact_arch }}" \
             --clobber
