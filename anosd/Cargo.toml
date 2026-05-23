@@ -1,0 +1,22 @@
+[package]
+name = "anosd"
+version = "0.1.0"
+edition = "2021"
+description = "Anos AI Native OS - Daemon"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "charset", "http2"] }
+tokio-stream = "0.1"
+futures = "0.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4"] }
+anyhow = "1"
+thiserror = "2"
+bytes = "1"
+chrono = { version = "0.4", features = ["serde"] }
+async-trait = "0.1"

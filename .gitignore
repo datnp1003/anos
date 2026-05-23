@@ -1,0 +1,8 @@
+target/
+Cargo.lock
+/tmp/anos.sock
+/tmp/anos-history.txt
+/tmp/anos-cli-history.txt
+*.swp
+*.swo
+.DS_Store

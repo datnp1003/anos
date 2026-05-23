@@ -1,0 +1,49 @@
+# Anos Provider Configuration
+active: deepseek
+
+providers:
+  - id: deepseek
+    name: DeepSeek v4 Pro
+    type: openai-compatible
+    endpoint: https://9router.datnp.com/v1
+    model: cmc/deepseek/deepseek-v4-pro
+    api_key_env: ANOS_API_KEY
+    priority: 1
+
+  - id: openai
+    name: OpenAI GPT-5
+    type: openai
+    endpoint: https://api.openai.com/v1
+    model: gpt-5
+    api_key_env: OPENAI_API_KEY
+    priority: 2
+
+  - id: claude
+    name: Claude Opus 4.5
+    type: openai-compatible
+    endpoint: https://9router.datnp.com/v1
+    model: anthropic/claude-opus-4-5
+    api_key_env: ANOS_API_KEY
+    priority: 3
+
+  - id: ollama
+    name: Ollama Local (Llama 4)
+    type: ollama
+    endpoint: http://localhost:11434
+    model: llama-4-8b-q8
+    priority: 4
+
+  - id: codex
+    name: Codex / ACP
+    type: openai-compatible
+    endpoint: unix:///run/anos/codex.sock
+    model: codex-default
+    priority: 5
+
+  - id: groq
+    name: Groq (Fast)
+    type: openai-compatible
+    endpoint: https://api.groq.com/openai/v1
+    model: llama-4-maverick-128k
+    api_key_env: GROQ_API_KEY
+    priority: 6
