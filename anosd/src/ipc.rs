@@ -251,53 +251,103 @@ async fn process_chat(
         (p.model().to_string(), p.id().to_string())
     };
     let tools = Some(openai_tool_schemas(&session.tools.schemas()));
-    let req = ChatCompletionRequest {
-        model,
-        messages,
+    let mut loop_messages = messages;
+    let mut req = ChatCompletionRequest {
+        model: model.clone(),
+        messages: loop_messages.clone(),
         temperature: Some(0.7),
         max_tokens: Some(2048),
         stream: None,
         tools,
     };
-    let result = { registry.read().await.active().chat(req).await };
-    match result {
-        Ok(resp) => {
-            let choice = resp.choices.first();
-            let content = choice
-                .and_then(|c| c.message.content.clone())
-                .unwrap_or_default();
-            let tool_calls = choice.and_then(|c| c.message.tool_calls.clone());
-            if let Some(calls) = tool_calls {
-                for call in &calls {
-                    let params: serde_json::Value =
-                        serde_json::from_str(&call.function.arguments).unwrap_or_default();
-                    tracing::info!(
-                        "🔧 Tool: {} ({})",
-                        call.function.name,
-                        call.function.arguments
-                    );
-                    let r = session
-                        .tools
-                        .execute(&call.function.name, &params, false)
-                        .await;
-                    if r.success {
-                        writer
-                            .write_all(
-                                format!(">> 🔧 {}: {}\n", call.function.name, r.output).as_bytes(),
-                            )
-                            .await
-                            .ok();
-                        session.messages.push(ChatMessage {
-                            role: "tool".into(),
-                            content: format!("{} result: {}", call.function.name, r.output),
-                            tool_calls: None,
-                            tool_call_id: Some(call.id.clone()),
-                        });
-                    } else if let Some(ref e) = r.error {
-                        let needs_confirm = e.contains("Reply 'yes'")
-                            || e.contains("Needs confirmation")
-                            || e.contains("needs confirmation");
-                        if needs_confirm {
+
+    for step in 0..3 {
+        let result = { registry.read().await.active().chat(req).await };
+        match result {
+            Ok(resp) => {
+                let choice = resp.choices.first();
+                let content = choice
+                    .and_then(|c| c.message.content.clone())
+                    .unwrap_or_default();
+                let tool_calls = choice.and_then(|c| c.message.tool_calls.clone());
+
+                if let Some(calls) = tool_calls {
+                    if calls.is_empty() {
+                        finish_assistant_response(&content, &pid, session, writer).await;
+                        break;
+                    }
+
+                    loop_messages.push(ChatMessage {
+                        role: "assistant".into(),
+                        content: content.clone(),
+                        tool_calls: Some(calls.clone()),
+                        tool_call_id: None,
+                    });
+
+                    let mut blocked_for_confirmation = false;
+                    for call in &calls {
+                        let params: serde_json::Value =
+                            serde_json::from_str(&call.function.arguments).unwrap_or_default();
+                        tracing::info!(
+                            "🔧 Tool: {} ({})",
+                            call.function.name,
+                            call.function.arguments
+                        );
+                        let r = session
+                            .tools
+                            .execute(&call.function.name, &params, false)
+                            .await;
+
+                        if r.success {
+                            writer
+                                .write_all(
+                                    format!(">> 🔧 {}: {}\n", call.function.name, r.output)
+                                        .as_bytes(),
+                                )
+                                .await
+                                .ok();
+                            loop_messages.push(ChatMessage {
+                                role: "tool".into(),
+                                content: r.output.clone(),
+                                tool_calls: None,
+                                tool_call_id: Some(call.id.clone()),
+                            });
+                        } else if let Some(ref e) = r.error {
+                            let needs_confirm = e.contains("Reply 'yes'")
+                                || e.contains("Needs confirmation")
+                                || e.contains("needs confirmation");
+                            if needs_confirm {
+                                let summary =
+                                    format!("{} {}", call.function.name, call.function.arguments);
+                                session.pending = Some(PendingAction {
+                                    tool_name: call.function.name.clone(),
+                                    params: params.clone(),
+                                    summary: summary.clone(),
+                                });
+                                writer.write_all(format!(">> ⚠️ {}\n>> Pending: {}\n>> Reply 'yes' to confirm or 'no' to cancel.\n[END]\n", e, summary).as_bytes()).await.ok();
+                                session.messages.push(ChatMessage {
+                                    role: "assistant".into(),
+                                    content: format!("Pending confirmation: {}", summary),
+                                    tool_calls: None,
+                                    tool_call_id: None,
+                                });
+                                blocked_for_confirmation = true;
+                                break;
+                            }
+
+                            writer
+                                .write_all(
+                                    format!(">> ❌ {}: {}\n", call.function.name, e).as_bytes(),
+                                )
+                                .await
+                                .ok();
+                            loop_messages.push(ChatMessage {
+                                role: "tool".into(),
+                                content: format!("ERROR: {}", e),
+                                tool_calls: None,
+                                tool_call_id: Some(call.id.clone()),
+                            });
+                        } else {
                             let summary =
                                 format!("{} {}", call.function.name, call.function.arguments);
                             session.pending = Some(PendingAction {
@@ -305,63 +355,71 @@ async fn process_chat(
                                 params: params.clone(),
                                 summary: summary.clone(),
                             });
-                            writer.write_all(format!(">> ⚠️ {}\n>> Pending: {}\n>> Reply 'yes' to confirm or 'no' to cancel.\n", e, summary).as_bytes()).await.ok();
-                            session.messages.push(ChatMessage {
-                                role: "assistant".into(),
-                                content: format!("Pending confirmation: {}", summary),
-                                tool_calls: None,
-                                tool_call_id: None,
-                            });
-                        } else {
-                            writer
-                                .write_all(
-                                    format!(">> ❌ {}: {}\n", call.function.name, e).as_bytes(),
-                                )
-                                .await
-                                .ok();
-                            session.messages.push(ChatMessage {
-                                role: "tool".into(),
-                                content: format!("{} error: {}", call.function.name, e),
-                                tool_calls: None,
-                                tool_call_id: Some(call.id.clone()),
-                            });
+                            writer.write_all(format!(">> ⚠️ Pending: {}\n>> Reply 'yes' to confirm or 'no' to cancel.\n[END]\n", summary).as_bytes()).await.ok();
+                            blocked_for_confirmation = true;
+                            break;
                         }
-                    } else {
-                        let summary = format!("{} {}", call.function.name, call.function.arguments);
-                        session.pending = Some(PendingAction {
-                            tool_name: call.function.name.clone(),
-                            params: params.clone(),
-                            summary: summary.clone(),
-                        });
-                        writer.write_all(format!(">> ⚠️ Pending: {}\n>> Reply 'yes' to confirm or 'no' to cancel.\n", summary).as_bytes()).await.ok();
                     }
+
+                    if blocked_for_confirmation {
+                        break;
+                    }
+
+                    req = ChatCompletionRequest {
+                        model: model.clone(),
+                        messages: loop_messages.clone(),
+                        temperature: Some(0.7),
+                        max_tokens: Some(2048),
+                        stream: None,
+                        tools: Some(openai_tool_schemas(&session.tools.schemas())),
+                    };
+                    if step == 2 {
+                        writer
+                            .write_all(
+                                ">> ⚠️ Tool loop limit reached before final answer.\n[END]\n"
+                                    .as_bytes(),
+                            )
+                            .await
+                            .ok();
+                    }
+                } else {
+                    finish_assistant_response(&content, &pid, session, writer).await;
+                    break;
                 }
-                writer.write_all(b"[END]\n").await.ok();
-            } else {
+            }
+            Err(e) => {
+                tracing::error!("Provider: {e}");
                 writer
-                    .write_all(format!("[THINKING]\n>> {}\n[{}]\n[END]\n", content, pid).as_bytes())
+                    .write_all(format!(">> ❌ {}\n[END]\n", e).as_bytes())
                     .await
                     .ok();
-                session.messages.push(ChatMessage {
-                    role: "assistant".into(),
-                    content,
-                    tool_calls: None,
-                    tool_call_id: None,
-                });
+                break;
             }
-            if session.messages.len() > 30 {
-                let split = session.messages.len().saturating_sub(25);
-                session.messages = session.messages.split_off(split);
-            }
-        }
-        Err(e) => {
-            tracing::error!("Provider: {e}");
-            writer
-                .write_all(format!(">> ❌ {}\n[END]\n", e).as_bytes())
-                .await
-                .ok();
         }
     }
+
+    if session.messages.len() > 30 {
+        let split = session.messages.len().saturating_sub(25);
+        session.messages = session.messages.split_off(split);
+    }
+}
+
+async fn finish_assistant_response(
+    content: &str,
+    provider_id: &str,
+    session: &mut Session,
+    writer: &mut (impl AsyncWrite + Unpin),
+) {
+    writer
+        .write_all(format!("[THINKING]\n>> {}\n[{}]\n[END]\n", content, provider_id).as_bytes())
+        .await
+        .ok();
+    session.messages.push(ChatMessage {
+        role: "assistant".into(),
+        content: content.to_string(),
+        tool_calls: None,
+        tool_call_id: None,
+    });
 }
 
 fn openai_tool_schemas(schemas: &[ToolSchema]) -> Vec<serde_json::Value> {
