@@ -10,8 +10,24 @@ use crate::provider::{ChatCompletionRequest, ChatMessage, ProviderRegistry};
 use crate::systemmap::SystemMap;
 use crate::tools::{ToolRegistry, ToolSchema};
 
-struct Session { messages: Vec<ChatMessage>, tools: ToolRegistry }
-impl Session { fn new() -> Self { Self { messages: Vec::new(), tools: ToolRegistry::new() } } }
+#[derive(Debug, Clone)]
+struct PendingAction {
+    tool_name: String,
+    params: serde_json::Value,
+    summary: String,
+}
+
+struct Session {
+    messages: Vec<ChatMessage>,
+    tools: ToolRegistry,
+    pending: Option<PendingAction>,
+}
+
+impl Session {
+    fn new() -> Self {
+        Self { messages: Vec::new(), tools: ToolRegistry::new(), pending: None }
+    }
+}
 
 pub struct IpcServer { socket_path: PathBuf, registry: Arc<RwLock<ProviderRegistry>>, context: Arc<PromptContext> }
 
@@ -38,6 +54,19 @@ async fn handle_connection(stream: UnixStream, registry: Arc<RwLock<ProviderRegi
     loop {
         line.clear(); if buf.read_line(&mut line).await? == 0 { break; }
         let msg = line.trim().to_string(); if msg.is_empty() { continue; }
+        let normalized = msg.to_lowercase();
+        if matches!(normalized.as_str(), "yes" | "y" | "ok" | "okay" | "đồng ý" | "dong y" | "làm đi" | "lam di" | "confirm") {
+            if execute_pending(&mut session, &mut writer).await {
+                continue;
+            }
+        }
+        if matches!(normalized.as_str(), "no" | "n" | "cancel" | "hủy" | "huy" | "không" | "khong") {
+            if let Some(p) = session.pending.take() {
+                writer.write_all(format!("Cancelled pending action: {}\n[END]\n", p.summary).as_bytes()).await?;
+                continue;
+            }
+        }
+
         let parts: Vec<&str> = msg.splitn(2, ' ').collect();
         match parts[0] {
             "/exit"|"/quit" => { writer.write_all(b"Bye!\n").await?; break; }
@@ -64,6 +93,20 @@ async fn handle_connection(stream: UnixStream, registry: Arc<RwLock<ProviderRegi
     Ok(())
 }
 
+async fn execute_pending(session: &mut Session, writer: &mut (impl AsyncWrite + Unpin)) -> bool {
+    let Some(pending) = session.pending.take() else { return false; };
+    tracing::info!("✅ Confirmed pending tool: {} ({})", pending.tool_name, pending.params);
+    let r = session.tools.execute(&pending.tool_name, &pending.params, true).await;
+    if r.success {
+        writer.write_all(format!(">> 🔧 {}: {}\n[END]\n", pending.tool_name, r.output).as_bytes()).await.ok();
+    } else if let Some(e) = r.error {
+        writer.write_all(format!(">> ❌ {}: {}\n[END]\n", pending.tool_name, e).as_bytes()).await.ok();
+    } else {
+        writer.write_all(format!(">> ❌ {} failed\n[END]\n", pending.tool_name).as_bytes()).await.ok();
+    }
+    true
+}
+
 async fn process_chat(msg: &str, session: &mut Session, registry: &Arc<RwLock<ProviderRegistry>>, context: &PromptContext, writer: &mut (impl AsyncWrite + Unpin)) {
     session.messages.push(ChatMessage { role: "user".into(), content: msg.into(), tool_calls: None, tool_call_id: None });
     let hint = classify_intent(msg);
@@ -85,10 +128,25 @@ async fn process_chat(msg: &str, session: &mut Session, registry: &Arc<RwLock<Pr
                     let params: serde_json::Value = serde_json::from_str(&call.function.arguments).unwrap_or_default();
                     tracing::info!("🔧 Tool: {} ({})", call.function.name, call.function.arguments);
                     let r = session.tools.execute(&call.function.name, &params, false).await;
-                    if r.success { writer.write_all(format!(">> 🔧 {}: {}\n", call.function.name, r.output).as_bytes()).await.ok(); }
-                    else if let Some(ref e) = r.error { writer.write_all(format!(">> ⚠️ {}: {}\n", call.function.name, e).as_bytes()).await.ok(); }
-                    else { writer.write_all(format!(">> ⚠️ {}: Action needs confirmation. Reply 'yes'.\n", call.function.name).as_bytes()).await.ok(); }
-                    session.messages.push(ChatMessage { role: "tool".into(), content: format!("{} result: {}", call.function.name, r.output), tool_calls: None, tool_call_id: Some(call.id.clone()) });
+                    if r.success {
+                        writer.write_all(format!(">> 🔧 {}: {}\n", call.function.name, r.output).as_bytes()).await.ok();
+                        session.messages.push(ChatMessage { role: "tool".into(), content: format!("{} result: {}", call.function.name, r.output), tool_calls: None, tool_call_id: Some(call.id.clone()) });
+                    } else if let Some(ref e) = r.error {
+                        let needs_confirm = e.contains("Reply 'yes'") || e.contains("Needs confirmation") || e.contains("needs confirmation");
+                        if needs_confirm {
+                            let summary = format!("{} {}", call.function.name, call.function.arguments);
+                            session.pending = Some(PendingAction { tool_name: call.function.name.clone(), params: params.clone(), summary: summary.clone() });
+                            writer.write_all(format!(">> ⚠️ {}\n>> Pending: {}\n>> Reply 'yes' to confirm or 'no' to cancel.\n", e, summary).as_bytes()).await.ok();
+                            session.messages.push(ChatMessage { role: "assistant".into(), content: format!("Pending confirmation: {}", summary), tool_calls: None, tool_call_id: None });
+                        } else {
+                            writer.write_all(format!(">> ❌ {}: {}\n", call.function.name, e).as_bytes()).await.ok();
+                            session.messages.push(ChatMessage { role: "tool".into(), content: format!("{} error: {}", call.function.name, e), tool_calls: None, tool_call_id: Some(call.id.clone()) });
+                        }
+                    } else {
+                        let summary = format!("{} {}", call.function.name, call.function.arguments);
+                        session.pending = Some(PendingAction { tool_name: call.function.name.clone(), params: params.clone(), summary: summary.clone() });
+                        writer.write_all(format!(">> ⚠️ Pending: {}\n>> Reply 'yes' to confirm or 'no' to cancel.\n", summary).as_bytes()).await.ok();
+                    }
                 }
                 writer.write_all(b"[END]\n").await.ok();
             } else {
