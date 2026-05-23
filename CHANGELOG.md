@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.1.2-dev.1 — 2026-05-23
+
+Development prerelease from `dev_lor` for Phase 2 hardening.
+
+### Added
+- 🔁 **Agentic tool result loop** — tool outputs are fed back to the model so it can produce a final natural-language answer
+- 📦 **Binary-first installer** — tries release binaries first, then falls back to user-space source build
+- 🏗️ **Multi-arch release workflow** — builds/uploads `linux-arm64` and `linux-x86_64` release artifacts
+
+### Changed
+- 🧹 Removed non-functional Codex/ACP placeholder from default providers
+- Clarified provider contract: default providers must be OpenAI-compatible HTTP APIs
+- Installer supports `ANOS_VERSION` and arch-aware binary downloads
+
+### Verified
+- Latest `dev_lor` CI succeeded
+- `anosd` fmt/clippy/test/build OK
+- `anos-cli` fmt/clippy/test/build OK
+- Binary install path tested against `v0.1.1-dev.1`
+
 ## v0.1.1-dev.1 — 2026-05-23
 
 Development prerelease from `dev_lor`.
