@@ -57,6 +57,8 @@ echo "Check RAM" | anos
 | 📦 Package | search, install, remove, update, info | Confirm |
 | ⚡ Process | list, kill, info | Dangerous |
 | 🔄 Service | list, status, start, stop, restart, logs | Confirm |
+| 📁 FileSystem | list, read, find, disk_usage, mkdir, write | Confirm for writes |
+| 🌐 Network | interfaces, listening_ports, routes, ping, dns_lookup | ReadOnly |
 
 ## ⚙️ Configuration
 
@@ -107,8 +109,14 @@ anos "Show tất cả process của user datnguyen"
 anos "Restart nginx"
 anos "Check log của anosd"
 
+# Filesystem
+anos "Liệt kê file trong /var/log"
+anos "Đọc 50 dòng đầu của README.md"
+anos "Tìm file *.service trong /etc"
+
 # Network
 anos "Port nào đang mở?"
+anos "Ping github.com"
 anos "Check DNS của datnp.com"
 
 # Multi-provider

@@ -10,7 +10,7 @@ Initial public release. First PoC with core features working.
 - 🗺️ **SystemMap** — Live OS state graph (CPU, RAM, disk, processes)
 - 🔌 **6 AI Providers** — DeepSeek, Claude, OpenAI, Ollama, Codex, Groq
 - 🔄 **Hot-switch** `/model <id>` to change providers in real-time
-- 🛠️ **3 System Tools** — Package (install/remove/update/search), Process (list/kill), Service (start/stop/restart/logs)
+- 🛠️ **5 System Tools** — Package, Process, Service, FileSystem, Network
 - 🛡️ **Permission System** — 4 levels (ReadOnly, Safe, Confirm, Dangerous)
 - 📋 **10 Domain Skills** — package, system, network, filesystem, process, kernel, security, self-upgrade, gui, provider
 - 🇻🇳 **Vietnamese + English** natural language support

@@ -108,6 +108,104 @@ impl SystemTool for ServiceTool {
     }
 }
 
+
+
+// ── Filesystem ──
+pub struct FileSystemTool;
+impl FileSystemTool { pub fn new() -> Self { Self } }
+#[async_trait]
+impl SystemTool for FileSystemTool {
+    fn name(&self) -> &str { "filesystem" }
+    fn description(&self) -> &str { "Inspect and manage files: list, read, find, disk_usage, mkdir, write" }
+    fn permission(&self) -> Permission { Permission::Confirm }
+    fn schema(&self) -> ToolSchema { ToolSchema { name: "filesystem".into(), description: self.description().into(), parameters: serde_json::json!({"type":"object","properties":{"action":{"type":"string","enum":["list","read","find","disk_usage","mkdir","write"]},"path":{"type":"string"},"pattern":{"type":"string"},"content":{"type":"string"},"limit":{"type":"integer"}},"required":["action"]}) } }
+    async fn execute(&self, params: &serde_json::Value, confirm: bool) -> ToolResult {
+        let action = params["action"].as_str().unwrap_or("list");
+        let path = params["path"].as_str().unwrap_or(".");
+        let limit = params["limit"].as_u64().unwrap_or(80).min(300) as usize;
+        match action {
+            "list" => {
+                match std::fs::read_dir(path) {
+                    Ok(entries) => {
+                        let mut rows = Vec::new();
+                        for e in entries.flatten().take(limit) {
+                            let meta = e.metadata().ok();
+                            let kind = if meta.as_ref().map(|m| m.is_dir()).unwrap_or(false) { "dir" } else { "file" };
+                            let size = meta.map(|m| m.len()).unwrap_or(0);
+                            rows.push(format!("{}\t{}\t{}", kind, size, e.file_name().to_string_lossy()));
+                        }
+                        ToolResult { success: true, output: rows.join("\n"), error: None }
+                    }
+                    Err(e) => ToolResult { success: false, output: String::new(), error: Some(e.to_string()) }
+                }
+            }
+            "read" => {
+                match std::fs::read_to_string(path) {
+                    Ok(text) => ToolResult { success: true, output: text.lines().take(limit).collect::<Vec<_>>().join("\n"), error: None },
+                    Err(e) => ToolResult { success: false, output: String::new(), error: Some(e.to_string()) }
+                }
+            }
+            "find" => {
+                let pattern = params["pattern"].as_str().unwrap_or("");
+                if pattern.is_empty() { return ToolResult { success: false, output: String::new(), error: Some("pattern required".into()) }; }
+                let (_, out) = run_cmd("find", &[path, "-iname", pattern, "-maxdepth", "5"]);
+                ToolResult { success: true, output: out.lines().take(limit).collect::<Vec<_>>().join("\n"), error: None }
+            }
+            "disk_usage" => {
+                let (_, out) = run_cmd("du", &["-sh", path]);
+                ToolResult { success: true, output: out, error: None }
+            }
+            "mkdir" if confirm => {
+                match std::fs::create_dir_all(path) {
+                    Ok(_) => ToolResult { success: true, output: format!("✅ Created directory: {}", path), error: None },
+                    Err(e) => ToolResult { success: false, output: String::new(), error: Some(e.to_string()) }
+                }
+            }
+            "write" if confirm => {
+                let content = params["content"].as_str().unwrap_or("");
+                match std::fs::write(path, content) {
+                    Ok(_) => ToolResult { success: true, output: format!("✅ Wrote {} bytes to {}", content.len(), path), error: None },
+                    Err(e) => ToolResult { success: false, output: String::new(), error: Some(e.to_string()) }
+                }
+            }
+            "mkdir" | "write" => ToolResult { success: false, output: String::new(), error: Some("⚠️ Filesystem write operation needs confirmation. Reply 'yes'.".into()) },
+            _ => ToolResult { success: false, output: String::new(), error: Some(format!("Unknown filesystem action: {}", action)) },
+        }
+    }
+}
+
+// ── Network ──
+pub struct NetworkTool;
+impl NetworkTool { pub fn new() -> Self { Self } }
+#[async_trait]
+impl SystemTool for NetworkTool {
+    fn name(&self) -> &str { "network" }
+    fn description(&self) -> &str { "Inspect network: interfaces, listening ports, routes, ping, dns_lookup" }
+    fn permission(&self) -> Permission { Permission::ReadOnly }
+    fn schema(&self) -> ToolSchema { ToolSchema { name: "network".into(), description: self.description().into(), parameters: serde_json::json!({"type":"object","properties":{"action":{"type":"string","enum":["interfaces","listening_ports","routes","ping","dns_lookup"]},"host":{"type":"string"},"port":{"type":"integer"}},"required":["action"]}) } }
+    async fn execute(&self, params: &serde_json::Value, _confirm: bool) -> ToolResult {
+        let action = params["action"].as_str().unwrap_or("interfaces");
+        match action {
+            "interfaces" => { let (_, out) = run_cmd("ip", &["-brief", "addr"]); ToolResult { success: true, output: out, error: None } }
+            "listening_ports" => { let (_, out) = run_cmd("ss", &["-tulpen"]); ToolResult { success: true, output: out.lines().take(80).collect::<Vec<_>>().join("\n"), error: None } }
+            "routes" => { let (_, out) = run_cmd("ip", &["route"]); ToolResult { success: true, output: out, error: None } }
+            "ping" => {
+                let host = params["host"].as_str().unwrap_or("");
+                if host.is_empty() { return ToolResult { success: false, output: String::new(), error: Some("host required".into()) }; }
+                let (code, out) = run_cmd("ping", &["-c", "4", host]);
+                ToolResult { success: code == 0, output: out, error: if code != 0 { Some("ping failed".into()) } else { None } }
+            }
+            "dns_lookup" => {
+                let host = params["host"].as_str().unwrap_or("");
+                if host.is_empty() { return ToolResult { success: false, output: String::new(), error: Some("host required".into()) }; }
+                let (code, out) = run_cmd("getent", &["hosts", host]);
+                ToolResult { success: code == 0, output: out, error: if code != 0 { Some("DNS lookup failed".into()) } else { None } }
+            }
+            _ => ToolResult { success: false, output: String::new(), error: Some(format!("Unknown network action: {}", action)) },
+        }
+    }
+}
+
 // ── Registry ──
 pub struct ToolRegistry {
     tools: HashMap<String, Box<dyn SystemTool>>,
@@ -119,6 +217,8 @@ impl ToolRegistry {
         let pt: Box<dyn SystemTool> = Box::new(PackageTool::new()); m.insert(pt.name().into(), pt);
         let pr: Box<dyn SystemTool> = Box::new(ProcessTool::new()); m.insert(pr.name().into(), pr);
         let sv: Box<dyn SystemTool> = Box::new(ServiceTool::new()); m.insert(sv.name().into(), sv);
+        let fs: Box<dyn SystemTool> = Box::new(FileSystemTool::new()); m.insert(fs.name().into(), fs);
+        let nt: Box<dyn SystemTool> = Box::new(NetworkTool::new()); m.insert(nt.name().into(), nt);
         Self { tools: m }
     }
     pub fn schemas(&self) -> Vec<ToolSchema> { self.tools.values().map(|t| t.schema()).collect() }

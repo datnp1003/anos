@@ -117,8 +117,8 @@ fn classify_intent(msg: &str) -> Option<String> {
     let p: &[(&[&str], &str)] = &[
         (&["cài","install","setup","gỡ","xóa","remove","update","upgrade","nâng cấp"], "package"),
         (&["chậm","lag","cpu","ram","memory","lỗi","error","crash"], "system"),
-        (&["mạng","network","port","dns","internet"], "network"),
-        (&["disk","ổ cứng","dọn","clean","btrfs"], "filesystem"),
+        (&["mạng","network","port","dns","internet","ping","route"], "network"),
+        (&["disk","ổ cứng","dọn","clean","btrfs","file","folder","thư mục","đọc file","ghi file"], "filesystem"),
         (&["process","kill","tiến trình","service","status","start","stop","restart"], "process"),
         (&["kernel","sysctl"], "kernel"), (&["bảo mật","security","firewall"], "security"),
         (&["gui","desktop","hyprland","sway"], "gui"),
