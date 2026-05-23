@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.2.0 — 2026-05-23
+
+Stable Phase 2 release promoted from `dev_lor`.
+
+### Added
+- 📁 **FileSystemTool** — `list`, `read`, `find`, `disk_usage`, `mkdir`, `write`
+- 🌐 **NetworkTool** — `interfaces`, `listening_ports`, `routes`, `ping`, `dns_lookup`
+- 🛡️ **Pending confirmation flow** for confirm-required/dangerous tools
+- 🔁 **Agentic tool result loop** — tool outputs are fed back to the model for final natural-language answers
+- 📦 **Binary-first installer** with source-build fallback
+- 🏗️ **GitHub Actions CI + multi-arch release workflow**
+  - `linux-arm64`
+  - `linux-x86_64`
+
+### Changed
+- `/tools` now lists 5 tools: package, process, service, filesystem, network
+- Installer supports `ANOS_BRANCH`, `ANOS_VERSION`, and arch-aware release downloads
+- Provider docs now clarify OpenAI-compatible HTTP API contract
+- Removed non-functional Codex/ACP placeholder from default providers; ACP adapter is future work
+- Rust sources formatted and clippy-cleaned
+
+### Verified
+- `dev_lor` CI succeeded before promotion
+- `anosd` fmt/clippy/test/build OK
+- `anos-cli` fmt/clippy/test/build OK
+- Release artifact workflow produced arm64 + x86_64 binaries for dev release
+- Binary install path tested against `v0.1.2-dev.1`
+
 ## v0.1.2-dev.1 — 2026-05-23
 
 Development prerelease from `dev_lor` for Phase 2 hardening.
