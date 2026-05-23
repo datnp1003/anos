@@ -8,7 +8,7 @@ use tokio::sync::RwLock;
 use crate::context::PromptContext;
 use crate::provider::{ChatCompletionRequest, ChatMessage, ProviderRegistry};
 use crate::systemmap::SystemMap;
-use crate::tools::ToolRegistry;
+use crate::tools::{ToolRegistry, ToolSchema};
 
 struct Session { messages: Vec<ChatMessage>, tools: ToolRegistry }
 impl Session { fn new() -> Self { Self { messages: Vec::new(), tools: ToolRegistry::new() } } }
@@ -72,7 +72,8 @@ async fn process_chat(msg: &str, session: &mut Session, registry: &Arc<RwLock<Pr
     let mut messages = vec![ChatMessage { role: "system".into(), content: sp, tool_calls: None, tool_call_id: None }];
     messages.extend(session.messages.clone());
     let (model, pid) = { let reg = registry.read().await; let p = reg.active(); (p.model().to_string(), p.id().to_string()) };
-    let req = ChatCompletionRequest { model, messages, temperature: Some(0.7), max_tokens: Some(2048), stream: None };
+    let tools = Some(openai_tool_schemas(&session.tools.schemas()));
+    let req = ChatCompletionRequest { model, messages, temperature: Some(0.7), max_tokens: Some(2048), stream: None, tools };
     let result = { registry.read().await.active().chat(req).await };
     match result {
         Ok(resp) => {
@@ -98,6 +99,17 @@ async fn process_chat(msg: &str, session: &mut Session, registry: &Arc<RwLock<Pr
         }
         Err(e) => { tracing::error!("Provider: {e}"); writer.write_all(format!(">> ❌ {}\n[END]\n", e).as_bytes()).await.ok(); }
     }
+}
+
+fn openai_tool_schemas(schemas: &[ToolSchema]) -> Vec<serde_json::Value> {
+    schemas.iter().map(|s| serde_json::json!({
+        "type": "function",
+        "function": {
+            "name": s.name,
+            "description": s.description,
+            "parameters": s.parameters,
+        }
+    })).collect()
 }
 
 fn classify_intent(msg: &str) -> Option<String> {

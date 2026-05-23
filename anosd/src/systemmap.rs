@@ -1,9 +1,9 @@
 use anyhow::Result;
-use chrono::Utc;
 use std::collections::HashMap;
 use std::process::Command;
 use serde::Serialize;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize)]
 pub struct SystemSection {
     pub name: &'static str,
@@ -29,7 +29,7 @@ impl SystemMap {
     }
 
     pub fn build(hint: Option<&str>, _: usize) -> Result<String> {
-        let hi = hint.unwrap_or("general").to_lowercase();
+        let _hint = hint.unwrap_or("general").to_lowercase();
         Self::snapshot()
     }
 

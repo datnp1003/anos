@@ -1,9 +1,9 @@
-use anyhow::Result;
 use async_trait::async_trait;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::process::Command;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
 pub enum Permission { ReadOnly = 0, Safe = 1, Confirm = 2, Dangerous = 3 }
 
@@ -25,6 +25,7 @@ pub struct ToolResult {
 pub trait SystemTool: Send + Sync {
     fn name(&self) -> &str;
     fn description(&self) -> &str;
+    #[allow(dead_code)]
     fn permission(&self) -> Permission;
     fn schema(&self) -> ToolSchema;
     async fn execute(&self, params: &serde_json::Value, require_confirm: bool) -> ToolResult;

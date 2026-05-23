@@ -38,6 +38,8 @@ pub struct ChatCompletionRequest {
     pub max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -82,11 +84,13 @@ pub struct ProviderConfig {
     pub id: String,
     pub name: String,
     #[serde(rename = "type")]
+    #[allow(dead_code)]
     pub provider_type: String,
     pub endpoint: String,
     pub model: String,
     pub api_key_env: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)]
     pub priority: u32,
 }
 

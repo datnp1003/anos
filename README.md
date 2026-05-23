@@ -84,7 +84,7 @@ Anos auto-loads the API key from your OpenClaw config (`~/.openclaw/openclaw.jso
 Or set it manually:
 
 ```bash
-export ANOS_API_KEY="sk-..."
+export ANOS_API_KEY="<your-api-key>"
 ```
 
 ## 💡 Usage Examples
