@@ -1,6 +1,6 @@
 [package]
 name = "anosd"
-version = "0.8.3"
+version = "0.8.4"
 edition = "2021"
 description = "Anos AI Native OS - Daemon"
 

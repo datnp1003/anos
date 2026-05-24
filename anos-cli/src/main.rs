@@ -165,6 +165,10 @@ fn show_help() {
     );
     println!(
         "{}",
+        "│  /version, /v  — Show Anos version   │".bright_black()
+    );
+    println!(
+        "{}",
         "│  /providers, /p — List AI providers  │".bright_black()
     );
     println!(

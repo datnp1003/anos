@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.8.4 — 2026-05-24
+
+Patch: Version command.
+
+### Added
+- `/version` and `/v` daemon commands show Anos version, protocol, daemon, and socket.
+- CLI help now lists `/version`.
+
 ## v0.8.3 — 2026-05-24
 
 Patch: installer/runtime asset fix.

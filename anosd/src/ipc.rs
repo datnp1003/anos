@@ -176,6 +176,18 @@ async fn handle_connection(
             "/ping" => {
                 writer.write_all(b"pong\n").await?;
             }
+            "/version" | "/v" => {
+                writer
+                    .write_all(
+                        format!(
+                            "Anos {} | protocol ANO/1.0 | daemon anosd | socket {}\n[END]\n",
+                            env!("CARGO_PKG_VERSION"),
+                            std::env::var("ANOS_SOCKET").unwrap_or_else(|_| "/tmp/anos.sock".into())
+                        )
+                        .as_bytes(),
+                    )
+                    .await?;
+            }
             "/providers" | "/p" => {
                 let l = registry.read().await.list();
                 writer
@@ -543,7 +555,7 @@ async fn handle_connection(
             "/help" => {
                 writer
                     .write_all(
-                        "Commands:\n  /model [id] — switch provider\n  /providers — list providers\n  /tools — list tools\n  /auto <goal> — autonomous multi-step task\n  /watch — proactive monitoring\n  /checks — list scheduled checks\n  /alerts — latest watcher alerts\n  /memstatus — Qdrant/fallback memory status\n  /memindex — index memory into Qdrant\n  /memsearch <q> — semantic memory search\n  /stream — streaming scaffold status\n  /memory — show memory\n  /audit — show audit log\n  /spawn <cmd> — spawn sub-agent\n  /agents — list sub-agents\n  /hooks — list hooks\n  /snapshot — list snapshots\n  /upgrade — check for updates\n  /ping — health check\n  /exit — quit\n[END]\n"
+                        "Commands:\n  /version — show Anos version\n  /model [id] — switch provider\n  /providers — list providers\n  /tools — list tools\n  /auto <goal> — autonomous multi-step task\n  /watch — proactive monitoring\n  /checks — list scheduled checks\n  /alerts — latest watcher alerts\n  /memstatus — Qdrant/fallback memory status\n  /memindex — index memory into Qdrant\n  /memsearch <q> — semantic memory search\n  /stream — streaming scaffold status\n  /memory — show memory\n  /audit — show audit log\n  /spawn <cmd> — spawn sub-agent\n  /agents — list sub-agents\n  /hooks — list hooks\n  /snapshot — list snapshots\n  /upgrade — check for updates\n  /ping — health check\n  /exit — quit\n[END]\n"
                             .as_bytes(),
                     )
                     .await?;
