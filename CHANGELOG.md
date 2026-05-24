@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- Installer now preserves existing user configuration and runtime state when replacing `ANOS_DIR`.
+- Preserved files include provider config, policy, memory, audit, watcher state, alerts, hooks, subagents, and Qdrant data.
+
 ## v0.10.0 — 2026-05-24
 
 Production CLI foundation release.

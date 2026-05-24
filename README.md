@@ -38,6 +38,22 @@ The default install is user-space only:
 - Binaries: `~/.local/bin/anos`, `~/.local/bin/anosd`, `~/.local/bin/anos-cli`
 - Socket: `/tmp/anos.sock`
 
+### Upgrade and Config Preservation
+
+The installer preserves user configuration and runtime state when it has to replace `~/.anos`:
+
+- `config/providers.yaml`
+- `policy.yaml`
+- `memory.jsonl`
+- `audit.jsonl`
+- `watcher.yaml`
+- `watcher-alerts.jsonl`
+- `subagents.jsonl`
+- `hooks.yaml`
+- `qdrant/`
+
+This means reinstalling or upgrading should not require provider setup again.
+
 ## Quick Start
 
 ```bash

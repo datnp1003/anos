@@ -33,6 +33,54 @@ REPO="datnp1003/anos"
 
 mkdir -p "$BIN_DIR"
 
+BACKUP_DIR=""
+backup_user_state() {
+    if [ ! -d "$INSTALL_DIR" ]; then
+        return 0
+    fi
+    BACKUP_DIR=$(mktemp -d)
+    echo "🧷 Preserving existing config/state..."
+    local items=(
+        "config/providers.yaml"
+        "policy.yaml"
+        "memory.jsonl"
+        "audit.jsonl"
+        "watcher.yaml"
+        "watcher-alerts.jsonl"
+        "subagents.jsonl"
+        "hooks.yaml"
+        "qdrant"
+    )
+    for item in "${items[@]}"; do
+        if [ -e "$INSTALL_DIR/$item" ]; then
+            mkdir -p "$BACKUP_DIR/$(dirname "$item")"
+            cp -a "$INSTALL_DIR/$item" "$BACKUP_DIR/$item"
+        fi
+    done
+}
+
+restore_user_state() {
+    if [ -z "$BACKUP_DIR" ] || [ ! -d "$BACKUP_DIR" ]; then
+        return 0
+    fi
+    echo "♻️  Restoring preserved config/state..."
+    (cd "$BACKUP_DIR" && find . -mindepth 1 -maxdepth 5 -print) | while read -r item; do
+        item="${item#./}"
+        if [ -e "$BACKUP_DIR/$item" ]; then
+            mkdir -p "$INSTALL_DIR/$(dirname "$item")"
+            cp -a "$BACKUP_DIR/$item" "$INSTALL_DIR/$item"
+        fi
+    done
+    rm -rf "$BACKUP_DIR"
+}
+
+safe_clone_runtime() {
+    backup_user_state
+    rm -rf "$INSTALL_DIR"
+    git clone "$@"
+    restore_user_state
+}
+
 ensure_runtime_assets() {
     if ! command -v git >/dev/null 2>&1; then
         echo "⚠️ git not found; runtime assets may be missing (ANOS-SYSTEM-PROMPT.md, skills)."
@@ -44,8 +92,7 @@ ensure_runtime_assets() {
         git checkout "$ANOS_BRANCH" >/dev/null 2>&1 || true
         git pull --ff-only origin "$ANOS_BRANCH" >/dev/null 2>&1 || true
     else
-        rm -rf "$INSTALL_DIR"
-        git clone --depth 1 --branch "$ANOS_BRANCH" https://github.com/$REPO.git "$INSTALL_DIR" >/dev/null 2>&1 || true
+        safe_clone_runtime --depth 1 --branch "$ANOS_BRANCH" https://github.com/$REPO.git "$INSTALL_DIR" >/dev/null 2>&1 || true
     fi
     mkdir -p "$INSTALL_DIR/config"
 }
@@ -155,8 +202,7 @@ source_build_install() {
         git pull --ff-only origin "$ANOS_BRANCH"
     else
         echo "📦 Cloning Anos ($ANOS_BRANCH)..."
-        rm -rf "$INSTALL_DIR"
-        git clone --branch "$ANOS_BRANCH" https://github.com/$REPO.git "$INSTALL_DIR"
+        safe_clone_runtime --branch "$ANOS_BRANCH" https://github.com/$REPO.git "$INSTALL_DIR"
         cd "$INSTALL_DIR"
     fi
 
