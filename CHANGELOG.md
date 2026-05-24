@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.10.0 — 2026-05-24
+
+Production CLI foundation release.
+
+### Added
+- `anos status` for daemon/runtime overview.
+- `anos doctor` for install, environment, socket, and permission diagnostics.
+- `anos setup` provider setup wizard.
+- `anos install-service` to generate a user-level systemd service for `anosd`.
+- `anos policy` and `anos policy init` for permission policy skeleton management.
+- Professional CLI startup banner with ANOS ASCII logo, version, tagline, and quick commands.
+
+### Changed
+- README and project status documentation rewritten in English and updated for current commands.
+- User-facing hardcoded source messages normalized to English.
+- Install examples now use English prompts.
+
+### Verified
+- `anosd` tests pass.
+- `anos-cli` check/build pass.
+- Host binaries updated and smoke-tested.
+
 ## v0.9.2 — 2026-05-24
 
 Exit behavior patch.
