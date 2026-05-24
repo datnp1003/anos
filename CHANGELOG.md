@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.6.0 — 2026-05-24
+
+Phase 6: Proactive Scheduling — Anos tự chạy checks định kỳ, không cần user trigger.
+
+### Added
+- 👁️ **Proactive Watcher** — background scheduler chạy health checks tự động
+  - 6 built-in checks: disk, ram, updates, load, services, security
+  - Mỗi check có interval riêng (5m - 6h), threshold configurable
+  - Chạy trong `tokio::spawn` — không block daemon
+- 🎛️ `/watch` — enable/disable checks
+  - `/watch` — xem summary
+  - `/watch on disk` — bật check disk
+  - `/watch off updates` — tắt check updates
+  - `/watch all` — bật tất cả
+- 🎛️ `/checks` — list tất cả scheduled checks với status, interval, last value
+
+### Built-in Checks
+| Check | Interval | Threshold | Default |
+|-------|----------|-----------|---------|
+| 💾 Disk | 30min | 85% | ✅ On |
+| 🧠 RAM | 15min | 90% | ✅ On |
+| 📦 Updates | 6h | Any security | ✅ On |
+| ⚡ Load | 10min | CPU×2 | ⚫ Off |
+| 🔧 Services | 30min | Any down | ⚫ Off |
+| 🛡️ Security | 1h | >10 failed, any ban | ⚫ Off |
+
 ## v0.5.0 — 2026-05-24
 
 Phase 5: Agentic Loop — autonomous multi-step task execution.

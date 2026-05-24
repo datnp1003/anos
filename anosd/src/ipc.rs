@@ -10,6 +10,7 @@ use crate::spawn::{AgentRegistry, SpawnConfig};
 use crate::systemmap::SystemMap;
 use crate::tools::{ToolRegistry, ToolSchema};
 use crate::upgrade::SelfUpgrade;
+use crate::watcher::Watcher;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -47,6 +48,7 @@ pub struct IpcServer {
     registry: Arc<RwLock<ProviderRegistry>>,
     context: Arc<PromptContext>,
     data_dir: String,
+    watcher: Arc<Watcher>,
 }
 
 impl IpcServer {
@@ -55,12 +57,14 @@ impl IpcServer {
         registry: Arc<RwLock<ProviderRegistry>>,
         context: Arc<PromptContext>,
         data_dir: String,
+        watcher: Arc<Watcher>,
     ) -> Self {
         Self {
             socket_path,
             registry,
             context,
             data_dir,
+            watcher,
         }
     }
     pub async fn run(self) -> Result<()> {
@@ -77,8 +81,9 @@ impl IpcServer {
             let r = Arc::clone(&self.registry);
             let c = Arc::clone(&self.context);
             let dir = self.data_dir.clone();
+            let w = Arc::clone(&self.watcher);
             tokio::spawn(async move {
-                if let Err(e) = handle_connection(stream, r, c, &dir).await {
+                if let Err(e) = handle_connection(stream, r, c, &dir, w).await {
                     tracing::error!("Error: {e}");
                 }
             });
@@ -91,6 +96,7 @@ async fn handle_connection(
     registry: Arc<RwLock<ProviderRegistry>>,
     context: Arc<PromptContext>,
     data_dir: &str,
+    watcher: Arc<Watcher>,
 ) -> Result<()> {
     let (reader, mut writer) = stream.into_split();
     let mut buf = BufReader::new(reader);
@@ -363,6 +369,58 @@ async fn handle_connection(
                     writer.write_all(b"No updates available or gh CLI not found.\nTry /upgrade source for source build upgrade.\n[END]\n").await?;
                 }
             }
+            "/watch" => {
+                if parts.len() > 1 {
+                    let sub = parts[1];
+                    if sub == "on" || sub == "enable" {
+                        if parts.len() > 2 {
+                            let msg = watcher.enable(parts[2]).await;
+                            writer.write_all(format!("{}\n[END]\n", msg).as_bytes()).await?;
+                        } else {
+                            writer.write_all(b"Usage: /watch on <disk|ram|updates|load|services|security|all>\n[END]\n").await?;
+                        }
+                    } else if sub == "off" || sub == "disable" {
+                        if parts.len() > 2 {
+                            if parts[2] == "all" {
+                                for id in &["disk","ram","updates","load","services","security"] {
+                                    watcher.disable(id).await;
+                                }
+                                writer.write_all(b"All watches disabled.\n[END]\n").await?;
+                            } else {
+                                let msg = watcher.disable(parts[2]).await;
+                                writer.write_all(format!("{}\n[END]\n", msg).as_bytes()).await?;
+                            }
+                        } else {
+                            writer.write_all(b"Usage: /watch off <disk|ram|updates|load|services|security|all>\n[END]\n").await?;
+                        }
+                    } else if sub == "all" || sub == "on" && parts.len() == 2 {
+                        for id in &["disk","ram","updates","load","services","security"] {
+                            watcher.enable(id).await;
+                        }
+                        writer.write_all(b"All watches enabled.\n[END]\n").await?;
+                    } else {
+                        writer.write_all(b"Usage: /watch on|off <check>\n[END]\n").await?;
+                    }
+                } else {
+                    let summary = watcher.summary().await;
+                    writer.write_all(format!("{}\n[END]\n", summary).as_bytes()).await?;
+                }
+            }
+            "/checks" => {
+                let list = watcher.list().await;
+                let mut out = String::from("👁️ Scheduled Checks:\n");
+                for c in &list {
+                    let status = if c.enabled { "🟢" } else { "⚫" };
+                    let val = c.last_value.as_deref().unwrap_or("-");
+                    out.push_str(&format!(
+                        "  {} {} — {} (every {}s) [{}] alert: {}x\n",
+                        status, c.name, c.description, c.interval_secs,
+                        val, c.alert_count
+                    ));
+                }
+                out.push_str("\n/watch on <id> to enable, /watch off <id> to disable\n");
+                writer.write_all(format!("{}\n[END]\n", out).as_bytes()).await?;
+            }
             "/auto" => {
                 if parts.len() > 1 {
                     let goal = parts[1].to_string();
@@ -388,7 +446,7 @@ async fn handle_connection(
             "/help" => {
                 writer
                     .write_all(
-                        "Commands:\n  /model [id] — switch provider\n  /providers — list providers\n  /tools — list tools\n  /auto <goal> — autonomous multi-step task\n  /memory — show memory\n  /audit — show audit log\n  /spawn <cmd> — spawn sub-agent\n  /agents — list sub-agents\n  /hooks — list hooks\n  /snapshot — list snapshots\n  /upgrade — check for updates\n  /ping — health check\n  /exit — quit\n[END]\n"
+                        "Commands:\n  /model [id] — switch provider\n  /providers — list providers\n  /tools — list tools\n  /auto <goal> — autonomous multi-step task\n  /watch — proactive monitoring\n  /checks — list scheduled checks\n  /memory — show memory\n  /audit — show audit log\n  /spawn <cmd> — spawn sub-agent\n  /agents — list sub-agents\n  /hooks — list hooks\n  /snapshot — list snapshots\n  /upgrade — check for updates\n  /ping — health check\n  /exit — quit\n[END]\n"
                             .as_bytes(),
                     )
                     .await?;

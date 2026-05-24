@@ -11,6 +11,7 @@ mod spawn;
 mod systemmap;
 mod tools;
 mod upgrade;
+mod watcher;
 
 use anyhow::Result;
 use context::PromptContext;
@@ -20,6 +21,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing_subscriber::EnvFilter;
+use watcher::Watcher;
 
 fn load_key_from_config() -> Result<String> {
     let path = format!(
@@ -77,7 +79,11 @@ async fn main() -> Result<()> {
     let mem = memory::Memory::load(&dir)?;
     tracing::info!("Memory: {} entries", mem.stats());
 
-    let server = IpcServer::new(socket, registry, Arc::new(ctx), dir);
+    // Phase 6: start proactive watcher
+    let watcher = Arc::new(Watcher::new());
+    watcher.start().await;
+
+    let server = IpcServer::new(socket, registry, Arc::new(ctx), dir, watcher);
     tracing::info!("🦾 Ready. Socket: /tmp/anos.sock");
     server.run().await
 }
