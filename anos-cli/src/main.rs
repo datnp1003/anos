@@ -156,21 +156,94 @@ async fn one_shot(sock: &PathBuf, msg: &str) -> Result<()> {
     Ok(())
 }
 
-async fn interactive(sock: &PathBuf) -> Result<()> {
+fn print_banner() {
+    let logo = [
+        "     █████╗ ███╗   ██╗ ██████╗ ███████╗",
+        "    ██╔══██╗████╗  ██║██╔═══██╗██╔════╝",
+        "    ███████║██╔██╗ ██║██║   ██║███████╗",
+        "    ██╔══██║██║╚██╗██║██║   ██║╚════██║",
+        "    ██║  ██║██║ ╚████║╚██████╔╝███████║",
+        "    ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚══════╝",
+    ];
+
+    println!();
     println!(
-        "\n{}",
-        "╭──────────────────────────────────╮".bright_black()
+        "{}",
+        "╭────────────────────────────────────────────────────────────╮".bright_black()
+    );
+    for line in logo {
+        println!("│{}│", pad_ansi(&line.bright_cyan().bold().to_string(), 60));
+    }
+    println!(
+        "{}",
+        "├────────────────────────────────────────────────────────────┤".bright_black()
+    );
+    println!(
+        "│{}│",
+        pad_ansi(
+            &format!(
+                "{} {}",
+                "AI Native OS".bright_yellow().bold(),
+                format!("v{}", env!("CARGO_PKG_VERSION")).dimmed()
+            ),
+            60,
+        )
+    );
+    println!(
+        "│{}│",
+        pad_ansi(
+            &"Linux control plane • daemon + CLI • tools + memory"
+                .dimmed()
+                .to_string(),
+            60
+        )
     );
     println!(
         "{}",
-        "│  🦾  Anos — AI Native OS CLI      │"
-            .to_string()
-            .bright_yellow()
-            .bold()
+        "├────────────────────────── Quick Commands ──────────────────┤".bright_black()
     );
-    println!("{}", "│  /version /help /providers /exit │".dimmed());
-    println!("{}", "│  status doctor setup policy      │".dimmed());
-    println!("{}", "╰──────────────────────────────────╯".bright_black());
+    println!(
+        "│{}│",
+        pad_ansi("/help  /version  /providers  /model  /exit", 60)
+    );
+    println!(
+        "│{}│",
+        pad_ansi("anos status  •  anos doctor  •  anos setup", 60)
+    );
+    println!(
+        "{}",
+        "╰────────────────────────────────────────────────────────────╯".bright_black()
+    );
+}
+
+fn pad_ansi(s: &str, width: usize) -> String {
+    let visible = strip_ansi(s).chars().count();
+    if visible >= width {
+        return s.to_string();
+    }
+    format!("{}{}", s, " ".repeat(width - visible))
+}
+
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::new();
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next();
+            for n in chars.by_ref() {
+                if n.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+async fn interactive(sock: &PathBuf) -> Result<()> {
+    print_banner();
 
     let stream = UnixStream::connect(sock).await?;
     let (reader, mut writer) = stream.into_split();
