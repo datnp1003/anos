@@ -458,20 +458,43 @@ async fn handle_connection(
                         .await?;
                 }
             }
+            "/memstatus" => {
+                let out = memory.qdrant_status().await;
+                writer
+                    .write_all(format!("{}\n[END]\n", out).as_bytes())
+                    .await?;
+            }
+            "/memindex" => match memory.qdrant_index().await {
+                Ok(msg) => {
+                    writer
+                        .write_all(format!("✅ {}\n[END]\n", msg).as_bytes())
+                        .await?
+                }
+                Err(e) => {
+                    writer
+                        .write_all(format!("❌ Qdrant index failed: {}\n[END]\n", e).as_bytes())
+                        .await?
+                }
+            },
             "/memsearch" => {
                 if parts.len() > 1 {
-                    let hits = memory.semantic_search(parts[1], 10);
-                    let mut out = format!(
-                        "🧠 Semantic memory backend: {}\n",
-                        memory.semantic_backend()
-                    );
+                    let (backend, hits) = match memory.qdrant_search(parts[1], 10).await {
+                        Ok(hits) if !hits.is_empty() => ("qdrant", hits),
+                        Ok(_) => ("qdrant-empty→jsonl", memory.semantic_search(parts[1], 10)),
+                        Err(e) => {
+                            tracing::warn!("Qdrant search failed, falling back to JSONL: {}", e);
+                            ("jsonl-fallback", memory.semantic_search(parts[1], 10))
+                        }
+                    };
+                    let mut out = format!("🧠 Semantic memory backend: {}\n", backend);
                     for h in &hits {
                         out.push_str(&format!(
-                            "  {:.2} [{}] {}: {}\n",
+                            "  {:.2} [{}] {}: {} ({})\n",
                             h.score,
                             h.entry.timestamp.chars().take(16).collect::<String>(),
                             h.entry.category,
-                            h.entry.content.chars().take(160).collect::<String>()
+                            h.entry.content.chars().take(160).collect::<String>(),
+                            h.reason
                         ));
                     }
                     writer
@@ -520,7 +543,7 @@ async fn handle_connection(
             "/help" => {
                 writer
                     .write_all(
-                        "Commands:\n  /model [id] — switch provider\n  /providers — list providers\n  /tools — list tools\n  /auto <goal> — autonomous multi-step task\n  /watch — proactive monitoring\n  /checks — list scheduled checks\n  /alerts — latest watcher alerts\n  /memsearch <q> — semantic memory search\n  /stream — streaming scaffold status\n  /memory — show memory\n  /audit — show audit log\n  /spawn <cmd> — spawn sub-agent\n  /agents — list sub-agents\n  /hooks — list hooks\n  /snapshot — list snapshots\n  /upgrade — check for updates\n  /ping — health check\n  /exit — quit\n[END]\n"
+                        "Commands:\n  /model [id] — switch provider\n  /providers — list providers\n  /tools — list tools\n  /auto <goal> — autonomous multi-step task\n  /watch — proactive monitoring\n  /checks — list scheduled checks\n  /alerts — latest watcher alerts\n  /memstatus — Qdrant/fallback memory status\n  /memindex — index memory into Qdrant\n  /memsearch <q> — semantic memory search\n  /stream — streaming scaffold status\n  /memory — show memory\n  /audit — show audit log\n  /spawn <cmd> — spawn sub-agent\n  /agents — list sub-agents\n  /hooks — list hooks\n  /snapshot — list snapshots\n  /upgrade — check for updates\n  /ping — health check\n  /exit — quit\n[END]\n"
                             .as_bytes(),
                     )
                     .await?;
@@ -783,12 +806,15 @@ async fn process_chat(
                                 )
                                 .await;
 
-                            // Record successful fix in memory
+                            // Record successful fix in memory and opportunistically sync Qdrant.
                             let _ = memory.record_fix(
                                 &call.function.name,
                                 &call.function.arguments,
                                 &r.output,
                             );
+                            if let Err(e) = memory.qdrant_index().await {
+                                tracing::debug!("Qdrant sync skipped/failed: {}", e);
+                            }
 
                             writer
                                 .write_all(

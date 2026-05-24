@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.8.0 — 2026-05-24
+
+Phase 8: Real Qdrant Semantic Memory.
+
+### Added
+- 🧠 **Real Qdrant vector memory**
+  - `QdrantClient` over Qdrant HTTP API
+  - `QdrantConfig` from env: `ANOS_QDRANT_URL`, `QDRANT_URL`, `ANOS_QDRANT_COLLECTION`
+  - Auto-create collection with Cosine distance and 384-dim vectors
+  - Upsert memory entries into Qdrant points with full payload
+  - Search Qdrant by vector similarity, reconstructing `MemoryEntry` hits
+- 🧮 **Local hashing embeddings**
+  - Deterministic 384-dimensional normalized vectors
+  - No external embedding API required
+  - JSONL fallback remains if Qdrant is down
+- 🎛️ New commands
+  - `/memstatus` — Qdrant status + fallback status
+  - `/memindex` — index all JSONL memory into Qdrant
+  - `/memsearch <query>` — Qdrant search first, JSONL fallback second
+- 🔁 **Opportunistic Qdrant sync** after successful tool memory writes
+
+### Changed
+- `QdrantSemanticMemory` placeholder replaced with real HTTP client
+- `SemanticHit.reason` now distinguishes Qdrant cosine similarity vs JSONL fallback
+
 ## v0.7.0 — 2026-05-24
 
 Phase 7: Production Agent Hardening — alerts, persistence, semantic memory, streaming scaffold.

@@ -2,7 +2,9 @@
 //!
 //! Phase 2: learns from tool results, remembers fixes, preferences, and system state.
 
-use crate::vector_memory::{JsonlSemanticMemory, SemanticHit, SemanticMemory};
+use crate::vector_memory::{
+    JsonlSemanticMemory, QdrantClient, QdrantConfig, SemanticHit, SemanticMemory,
+};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -140,6 +142,45 @@ impl Memory {
 
     pub fn semantic_backend(&self) -> &'static str {
         JsonlSemanticMemory::new(Vec::new()).backend_name()
+    }
+
+    #[allow(dead_code)]
+    pub fn entries(&self) -> &[MemoryEntry] {
+        &self.entries
+    }
+
+    pub async fn qdrant_index(&self) -> Result<String> {
+        let client = QdrantClient::new(QdrantConfig::from_env());
+        let count = client.upsert_entries(&self.entries).await?;
+        Ok(format!(
+            "Indexed {} memory entries into Qdrant collection '{}' at {}",
+            count,
+            client.config().collection,
+            client.config().endpoint
+        ))
+    }
+
+    pub async fn qdrant_search(&self, query: &str, limit: usize) -> Result<Vec<SemanticHit>> {
+        let client = QdrantClient::new(QdrantConfig::from_env());
+        client.search(query, limit).await
+    }
+
+    pub async fn qdrant_status(&self) -> String {
+        let client = QdrantClient::new(QdrantConfig::from_env());
+        match client.health().await {
+            Ok(status) => format!(
+                "Qdrant: ✅ {} | collection={} | endpoint={}",
+                status,
+                client.config().collection,
+                client.config().endpoint
+            ),
+            Err(e) => format!(
+                "Qdrant: ❌ {} | fallback={} | endpoint={}",
+                e,
+                self.semantic_backend(),
+                client.config().endpoint
+            ),
+        }
     }
 
     /// Get recent entries for context injection
