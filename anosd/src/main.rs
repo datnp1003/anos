@@ -1,5 +1,8 @@
+mod audit;
 mod context;
+mod intent;
 mod ipc;
+mod memory;
 mod provider;
 mod systemmap;
 mod tools;
@@ -64,7 +67,12 @@ async fn main() -> Result<()> {
     let socket = std::env::var("ANOS_SOCKET")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("/tmp/anos.sock"));
-    let server = IpcServer::new(socket, registry, Arc::new(ctx));
+
+    // Phase 2: initialize memory and audit logger
+    let mem = memory::Memory::load(&dir)?;
+    tracing::info!("Memory: {} entries", mem.stats());
+
+    let server = IpcServer::new(socket, registry, Arc::new(ctx), dir);
     tracing::info!("🦾 Ready. Socket: /tmp/anos.sock");
     server.run().await
 }

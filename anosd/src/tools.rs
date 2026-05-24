@@ -36,7 +36,7 @@ pub trait SystemTool: Send + Sync {
     async fn execute(&self, params: &serde_json::Value, require_confirm: bool) -> ToolResult;
 }
 
-fn run_cmd(cmd: &str, args: &[&str]) -> (i32, String) {
+pub fn run_cmd(cmd: &str, args: &[&str]) -> (i32, String) {
     match Command::new(cmd).args(args).output() {
         Ok(o) => {
             let out = String::from_utf8_lossy(&o.stdout).to_string();

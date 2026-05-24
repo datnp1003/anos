@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.2.1 — 2026-05-24
+
+Phase 2 completion: Intent Classifier, Memory System, Audit Logger.
+
+### Added
+- 🎯 **IntentClassifier** — proper intent classification with confidence scoring and 10 intent categories
+- 🧠 **Memory System** — file-based persistent memory (JSONL) with search, record, and context injection
+- 📋 **Audit Logger** — thread-safe audit trail logging all tool executions, permission checks, confirmations, and model switches
+- 📊 **SystemMap filtering** — SystemMap now only includes sections relevant to the detected intent, saving tokens
+- 🎛️ `/memory` command — show memory stats and recent entries
+- 🎛️ `/audit` command — show audit log with real-time entries
+- 🧪 7 unit tests (5 intent + 2 memory)
+
+### Changed
+- IPC handler fully integrated with Memory + AuditLogger + IntentClassifier
+- System prompt now includes memory context alongside SystemMap
+- Automatic memory recording for successful tool executions
+- Tool confirmation flow fully audited
+- CLI help updated with new commands
+
 ## v0.2.0 — 2026-05-23
 
 Stable Phase 2 release promoted from `dev_lor`.

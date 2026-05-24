@@ -173,6 +173,14 @@ fn show_help() {
     );
     println!(
         "{}",
+        "│  /memory        — Show memory       │".bright_black()
+    );
+    println!(
+        "{}",
+        "│  /audit         — Show audit log    │".bright_black()
+    );
+    println!(
+        "{}",
         "│  /tools         — List tools         │".bright_black()
     );
     println!(

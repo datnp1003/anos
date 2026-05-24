@@ -14,6 +14,7 @@ pub struct SystemSection {
 pub struct SystemMap;
 
 impl SystemMap {
+    #[allow(dead_code)]
     pub fn snapshot() -> Result<String> {
         let mut s = String::from("# System State\n\n");
         s.push_str(&format!(
@@ -45,9 +46,93 @@ impl SystemMap {
         Ok(s)
     }
 
-    pub fn build(hint: Option<&str>, _: usize) -> Result<String> {
-        let _hint = hint.unwrap_or("general").to_lowercase();
-        Self::snapshot()
+    pub fn build(hint: Option<&str>, budget: usize) -> Result<String> {
+        let hint_lower = hint.unwrap_or("general").to_lowercase();
+
+        // Build intent-filtered snapshot
+        let mut sections: Vec<(&str, String)> = Vec::new();
+
+        // Always include host info
+        sections.push((
+            "host",
+            format!(
+                "Host: {} | Kernel: {} | Uptime: {}\n",
+                std::fs::read_to_string("/proc/sys/kernel/hostname")
+                    .unwrap_or_default()
+                    .trim(),
+                std::fs::read_to_string("/proc/version")
+                    .unwrap_or_default()
+                    .split_whitespace()
+                    .take(3)
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                Self::uptime()
+            ),
+        ));
+
+        // Add sections based on intent relevance
+        let needs_cpu_mem = hint_lower.contains("system")
+            || hint_lower.contains("process")
+            || hint_lower == "general";
+        let needs_pkg = hint_lower.contains("package") || hint_lower == "general";
+        let needs_svc = hint_lower.contains("process") || hint_lower == "general";
+        let _needs_disk = hint_lower.contains("filesystem") || hint_lower == "general";
+        let needs_net = hint_lower.contains("network") || hint_lower == "general";
+        let needs_top = hint_lower.contains("system")
+            || hint_lower.contains("process")
+            || hint_lower == "general";
+
+        if needs_cpu_mem {
+            sections.push((
+                "resources",
+                format!(
+                    "CPU: {:.1}% | RAM: {} | Disk: {}\n",
+                    Self::cpu_usage(),
+                    Self::memory(),
+                    Self::disk()
+                ),
+            ));
+        }
+
+        if needs_top {
+            sections.push(("top", format!("Top: {}\n", Self::top_processes())));
+        }
+
+        if needs_pkg {
+            sections.push((
+                "packages",
+                format!(
+                    "Pkgs: {} installed, {} upgradable\n",
+                    Self::pkg_count(),
+                    Self::upgradable_count()
+                ),
+            ));
+        }
+
+        if needs_svc {
+            sections.push(("services", format!("Svcs: {} running\n", Self::svc_count())));
+        }
+
+        if needs_net {
+            sections.push(("network", Self::network_summary()));
+        }
+
+        // Assemble with token budget
+        let mut s = String::from("# System State\n\n");
+        for (_, text) in &sections {
+            if s.len() + text.len() > budget {
+                s.push_str("... (truncated)\n");
+                break;
+            }
+            s.push_str(text);
+        }
+        Ok(s)
+    }
+
+    fn network_summary() -> String {
+        let (_, out) = crate::tools::run_cmd("ip", &["-brief", "addr"]);
+        let lines: Vec<&str> = out.lines().take(3).collect();
+        format!("Net: {}\n", lines.join(" | "))
     }
 
     fn uptime() -> String {

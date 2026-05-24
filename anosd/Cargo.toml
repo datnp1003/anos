@@ -1,6 +1,6 @@
 [package]
 name = "anosd"
-version = "0.1.0"
+version = "0.2.1"
 edition = "2021"
 description = "Anos AI Native OS - Daemon"
 
@@ -20,3 +20,6 @@ thiserror = "2"
 bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
 async-trait = "0.1"
+
+[dev-dependencies]
+tempfile = "3.27.0"
