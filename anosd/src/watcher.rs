@@ -1,15 +1,20 @@
 //! Proactive Scheduler — autonomous periodic system health checks with alerts.
 //!
-//! Phase 6: Anos tự chạy checks định kỳ, cảnh báo khi vượt ngưỡng, không cần user trigger.
+//! Phase 7 improvements:
+//! - Alerts are persisted to `watcher-alerts.jsonl`
+//! - Watch config persists to `watcher.yaml`
+//! - `/alerts` exposes latest alerts
 
+use crate::streaming::{StreamEvent, StreamEventKind};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::Write;
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{interval, Duration};
 
-/// A scheduled health check
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WatchCheck {
     pub id: String,
@@ -24,7 +29,23 @@ pub struct WatchCheck {
     pub alert_count: u64,
 }
 
-/// Result of a single check run
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchAlert {
+    pub timestamp: String,
+    pub check_id: String,
+    pub check_name: String,
+    pub severity: AlertSeverity,
+    pub message: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AlertSeverity {
+    Info,
+    Warning,
+    Critical,
+}
+
 #[derive(Debug, Clone)]
 struct CheckResult {
     #[allow(dead_code)]
@@ -36,96 +57,39 @@ struct CheckResult {
     message: String,
 }
 
-/// Scheduler that manages all watches
 pub struct Watcher {
     checks: Arc<RwLock<Vec<WatchCheck>>>,
+    alerts: Arc<RwLock<Vec<WatchAlert>>>,
+    config_path: PathBuf,
+    alerts_path: PathBuf,
 }
 
 impl Watcher {
-    pub fn new() -> Self {
-        let default_checks = vec![
-            WatchCheck {
-                id: "disk".into(),
-                name: "Disk Usage".into(),
-                description: "Alert when root disk exceeds threshold %".into(),
-                interval_secs: 1800,
-                enabled: true,
-                threshold: Some(85.0),
-                threshold_unit: Some("%".into()),
-                last_run: None,
-                last_value: None,
-                alert_count: 0,
-            },
-            WatchCheck {
-                id: "ram".into(),
-                name: "Memory Usage".into(),
-                description: "Alert when RAM usage exceeds threshold %".into(),
-                interval_secs: 900,
-                enabled: true,
-                threshold: Some(90.0),
-                threshold_unit: Some("%".into()),
-                last_run: None,
-                last_value: None,
-                alert_count: 0,
-            },
-            WatchCheck {
-                id: "updates".into(),
-                name: "Package Updates".into(),
-                description: "Alert when security updates are available".into(),
-                interval_secs: 21600,
-                enabled: true,
-                threshold: None,
-                threshold_unit: None,
-                last_run: None,
-                last_value: None,
-                alert_count: 0,
-            },
-            WatchCheck {
-                id: "load".into(),
-                name: "System Load".into(),
-                description: "Alert when load average exceeds CPU core count * 2".into(),
-                interval_secs: 600,
-                enabled: false,
-                threshold: None,
-                threshold_unit: None,
-                last_run: None,
-                last_value: None,
-                alert_count: 0,
-            },
-            WatchCheck {
-                id: "services".into(),
-                name: "Critical Services".into(),
-                description: "Alert when critical services are down".into(),
-                interval_secs: 1800,
-                enabled: false,
-                threshold: None,
-                threshold_unit: None,
-                last_run: None,
-                last_value: None,
-                alert_count: 0,
-            },
-            WatchCheck {
-                id: "security".into(),
-                name: "Security Audit".into(),
-                description: "Alert on failed SSH logins and firewall issues".into(),
-                interval_secs: 3600,
-                enabled: false,
-                threshold: None,
-                threshold_unit: None,
-                last_run: None,
-                last_value: None,
-                alert_count: 0,
-            },
-        ];
-
+    pub fn new(data_dir: &str) -> Self {
+        let config_path = PathBuf::from(data_dir).join("watcher.yaml");
+        let alerts_path = PathBuf::from(data_dir).join("watcher-alerts.jsonl");
+        let checks = if config_path.exists() {
+            std::fs::read_to_string(&config_path)
+                .ok()
+                .and_then(|s| serde_yaml::from_str::<Vec<WatchCheck>>(&s).ok())
+                .unwrap_or_else(default_checks)
+        } else {
+            default_checks()
+        };
+        let alerts = load_alerts(&alerts_path, 50);
         Self {
-            checks: Arc::new(RwLock::new(default_checks)),
+            checks: Arc::new(RwLock::new(checks)),
+            alerts: Arc::new(RwLock::new(alerts)),
+            config_path,
+            alerts_path,
         }
     }
 
-    /// Start the background scheduler
     pub async fn start(&self) {
         let checks = Arc::clone(&self.checks);
+        let alerts = Arc::clone(&self.alerts);
+        let alerts_path = self.alerts_path.clone();
+        let config_path = self.config_path.clone();
 
         tokio::spawn(async move {
             tracing::info!("👁️ Watcher started — monitoring system health");
@@ -134,45 +98,66 @@ impl Watcher {
             loop {
                 tick.tick().await;
                 let now = chrono::Utc::now();
-                let list = checks.read().await;
-
-                for check in list.iter() {
-                    if !check.enabled {
-                        continue;
-                    }
-                    if let Some(last) = &check.last_run {
-                        if let Ok(last_ts) = chrono::DateTime::parse_from_rfc3339(last) {
-                            let elapsed = (now - last_ts.with_timezone(&chrono::Utc)).num_seconds();
-                            if elapsed < check.interval_secs as i64 {
-                                continue;
+                let due: Vec<WatchCheck> = {
+                    let list = checks.read().await;
+                    list.iter()
+                        .filter(|check| {
+                            if !check.enabled {
+                                return false;
                             }
-                        }
-                    }
-                }
+                            if let Some(last) = &check.last_run {
+                                if let Ok(last_ts) = chrono::DateTime::parse_from_rfc3339(last) {
+                                    let elapsed =
+                                        (now - last_ts.with_timezone(&chrono::Utc)).num_seconds();
+                                    return elapsed >= check.interval_secs as i64;
+                                }
+                            }
+                            true
+                        })
+                        .cloned()
+                        .collect()
+                };
 
-                // Clone enabled checks to check
-                let enabled: Vec<WatchCheck> = list.iter().filter(|c| c.enabled).cloned().collect();
-                drop(list);
-
-                for check in &enabled {
+                for check in &due {
                     let result = execute_check(check);
                     let exceeded = result.exceeded_threshold;
-                    let mut list = checks.write().await;
-                    if let Some(c) = list.iter_mut().find(|c| c.id == check.id) {
-                        c.last_run = Some(now.to_rfc3339());
-                        c.last_value = Some(result.value.clone());
-                        if exceeded {
-                            c.alert_count += 1;
+                    {
+                        let mut list = checks.write().await;
+                        if let Some(c) = list.iter_mut().find(|c| c.id == check.id) {
+                            c.last_run = Some(now.to_rfc3339());
+                            c.last_value = Some(result.value.clone());
+                            if exceeded {
+                                c.alert_count += 1;
+                            }
                         }
+                        persist_checks(&config_path, &list);
                     }
-                    drop(list);
 
                     if exceeded {
-                        tracing::warn!(
-                            "⚠️ Watcher: {} exceeded threshold — {}",
-                            check.name,
-                            result.message
-                        );
+                        let alert = WatchAlert {
+                            timestamp: now.to_rfc3339(),
+                            check_id: check.id.clone(),
+                            check_name: check.name.clone(),
+                            severity: severity_for(check.id.as_str(), result.numeric_value),
+                            message: result.message.clone(),
+                            value: result.value.clone(),
+                        };
+                        append_alert(&alerts_path, &alert);
+                        {
+                            let mut a = alerts.write().await;
+                            a.push(alert.clone());
+                            if a.len() > 50 {
+                                let overflow = a.len() - 50;
+                                a.drain(0..overflow);
+                            }
+                        }
+                        let event = StreamEvent::new(StreamEventKind::Alert, &alert.message)
+                            .with_meta(serde_json::json!({
+                                "check_id": alert.check_id,
+                                "value": alert.value,
+                                "severity": format!("{:?}", alert.severity),
+                            }));
+                        tracing::warn!("{}", event.wire().trim());
                     } else {
                         tracing::debug!("✅ Watcher: {} OK — {}", check.name, result.message);
                     }
@@ -180,48 +165,210 @@ impl Watcher {
             }
         });
 
-        tracing::info!("Proactive scheduler started with {} checks", self.checks.read().await.len());
+        tracing::info!(
+            "Proactive scheduler started with {} checks",
+            self.checks.read().await.len()
+        );
     }
 
-    /// List all checks
     pub async fn list(&self) -> Vec<WatchCheck> {
         self.checks.read().await.clone()
     }
 
-    /// Enable a check
+    pub async fn alerts(&self, limit: usize) -> Vec<WatchAlert> {
+        self.alerts
+            .read()
+            .await
+            .iter()
+            .rev()
+            .take(limit)
+            .cloned()
+            .collect()
+    }
+
     pub async fn enable(&self, id: &str) -> String {
         let mut list = self.checks.write().await;
+        if id == "all" {
+            for c in list.iter_mut() {
+                c.enabled = true;
+            }
+            persist_checks(&self.config_path, &list);
+            return "✅ All watches enabled".into();
+        }
         if let Some(c) = list.iter_mut().find(|c| c.id == id) {
             c.enabled = true;
-            format!("✅ Watch '{}' enabled", c.name)
+            let name = c.name.clone();
+            persist_checks(&self.config_path, &list);
+            format!("✅ Watch '{}' enabled", name)
         } else {
             format!("❌ Check '{}' not found", id)
         }
     }
 
-    /// Disable a check
     pub async fn disable(&self, id: &str) -> String {
         let mut list = self.checks.write().await;
+        if id == "all" {
+            for c in list.iter_mut() {
+                c.enabled = false;
+            }
+            persist_checks(&self.config_path, &list);
+            return "🔕 All watches disabled".into();
+        }
         if let Some(c) = list.iter_mut().find(|c| c.id == id) {
             c.enabled = false;
-            format!("🔕 Watch '{}' disabled", c.name)
+            let name = c.name.clone();
+            persist_checks(&self.config_path, &list);
+            format!("🔕 Watch '{}' disabled", name)
         } else {
             format!("❌ Check '{}' not found", id)
         }
     }
 
-    /// Get check summary
+    pub async fn set_threshold(&self, id: &str, threshold: f64) -> String {
+        let mut list = self.checks.write().await;
+        if let Some(c) = list.iter_mut().find(|c| c.id == id) {
+            c.threshold = Some(threshold);
+            let name = c.name.clone();
+            persist_checks(&self.config_path, &list);
+            format!("✅ Threshold for '{}' set to {}", name, threshold)
+        } else {
+            format!("❌ Check '{}' not found", id)
+        }
+    }
+
     pub async fn summary(&self) -> String {
         let list = self.checks.read().await;
         let enabled = list.iter().filter(|c| c.enabled).count();
         let total = list.len();
-        let alerted = list.iter().filter(|c| c.alert_count > 0).count();
+        let alerts = self.alerts.read().await.len();
         format!(
-            "👁️ Watcher: {} enabled / {} total ({}) | {} recent alerts",
-            enabled, total,
-            list.iter().filter(|c| c.enabled).map(|c| c.id.clone()).collect::<Vec<_>>().join(", "),
-            alerted
+            "👁️ Watcher: {} enabled / {} total ({}) | {} stored alerts | config persists at {}",
+            enabled,
+            total,
+            list.iter()
+                .filter(|c| c.enabled)
+                .map(|c| c.id.clone())
+                .collect::<Vec<_>>()
+                .join(", "),
+            alerts,
+            self.config_path.display()
         )
+    }
+}
+
+fn default_checks() -> Vec<WatchCheck> {
+    vec![
+        WatchCheck {
+            id: "disk".into(),
+            name: "Disk Usage".into(),
+            description: "Alert when root disk exceeds threshold %".into(),
+            interval_secs: 1800,
+            enabled: true,
+            threshold: Some(85.0),
+            threshold_unit: Some("%".into()),
+            last_run: None,
+            last_value: None,
+            alert_count: 0,
+        },
+        WatchCheck {
+            id: "ram".into(),
+            name: "Memory Usage".into(),
+            description: "Alert when RAM usage exceeds threshold %".into(),
+            interval_secs: 900,
+            enabled: true,
+            threshold: Some(90.0),
+            threshold_unit: Some("%".into()),
+            last_run: None,
+            last_value: None,
+            alert_count: 0,
+        },
+        WatchCheck {
+            id: "updates".into(),
+            name: "Package Updates".into(),
+            description: "Alert when security updates are available".into(),
+            interval_secs: 21600,
+            enabled: true,
+            threshold: None,
+            threshold_unit: None,
+            last_run: None,
+            last_value: None,
+            alert_count: 0,
+        },
+        WatchCheck {
+            id: "load".into(),
+            name: "System Load".into(),
+            description: "Alert when load average exceeds CPU core count * 2".into(),
+            interval_secs: 600,
+            enabled: false,
+            threshold: None,
+            threshold_unit: None,
+            last_run: None,
+            last_value: None,
+            alert_count: 0,
+        },
+        WatchCheck {
+            id: "services".into(),
+            name: "Critical Services".into(),
+            description: "Alert when critical services are down".into(),
+            interval_secs: 1800,
+            enabled: false,
+            threshold: None,
+            threshold_unit: None,
+            last_run: None,
+            last_value: None,
+            alert_count: 0,
+        },
+        WatchCheck {
+            id: "security".into(),
+            name: "Security Audit".into(),
+            description: "Alert on failed SSH logins and firewall issues".into(),
+            interval_secs: 3600,
+            enabled: false,
+            threshold: None,
+            threshold_unit: None,
+            last_run: None,
+            last_value: None,
+            alert_count: 0,
+        },
+    ]
+}
+
+fn persist_checks(path: &PathBuf, checks: &[WatchCheck]) {
+    if let Ok(content) = serde_yaml::to_string(checks) {
+        let _ = std::fs::write(path, content);
+    }
+}
+
+fn append_alert(path: &PathBuf, alert: &WatchAlert) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(f, "{}", serde_json::to_string(alert).unwrap_or_default());
+    }
+}
+
+fn load_alerts(path: &PathBuf, limit: usize) -> Vec<WatchAlert> {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let mut alerts: Vec<WatchAlert> = content
+        .lines()
+        .filter_map(|l| serde_json::from_str::<WatchAlert>(l).ok())
+        .collect();
+    if alerts.len() > limit {
+        alerts.drain(0..alerts.len() - limit);
+    }
+    alerts
+}
+
+fn severity_for(id: &str, value: Option<f64>) -> AlertSeverity {
+    match (id, value.unwrap_or(0.0)) {
+        ("disk", v) if v >= 95.0 => AlertSeverity::Critical,
+        ("ram", v) if v >= 97.0 => AlertSeverity::Critical,
+        ("load", _) | ("services", _) | ("security", _) => AlertSeverity::Critical,
+        _ => AlertSeverity::Warning,
     }
 }
 
@@ -321,20 +468,19 @@ fn check_ram(check: &WatchCheck) -> CheckResult {
 }
 
 fn check_updates(check: &WatchCheck) -> CheckResult {
-    if let Ok(out) = Command::new("apt")
-        .args(["list", "--upgradable"])
-        .output()
-    {
+    if let Ok(out) = Command::new("apt").args(["list", "--upgradable"]).output() {
         let text = String::from_utf8_lossy(&out.stdout);
-        let count = text.lines().filter(|l| !l.starts_with("Listing") && !l.is_empty()).count();
+        let count = text
+            .lines()
+            .filter(|l| !l.starts_with("Listing") && !l.is_empty())
+            .count();
         let sec = text.lines().filter(|l| l.contains("-security")).count();
-        let exceeded = sec > 0;
         return CheckResult {
             check_id: check.id.clone(),
             value: format!("{} total, {} security", count, sec),
             numeric_value: Some(count as f64),
-            exceeded_threshold: exceeded,
-            message: if exceeded {
+            exceeded_threshold: sec > 0,
+            message: if sec > 0 {
                 format!("{} security updates available", sec)
             } else {
                 format!("{} updates (0 security) — OK", count)
@@ -358,22 +504,22 @@ fn check_load(check: &WatchCheck) -> CheckResult {
             .unwrap_or("0")
             .parse()
             .unwrap_or(0.0);
-
-        let cpus: f64 = std::fs::read_to_string("/proc/cpuinfo")
+        let cpus = std::fs::read_to_string("/proc/cpuinfo")
             .unwrap_or_default()
             .lines()
             .filter(|l| l.starts_with("processor"))
             .count() as f64;
-
         let threshold = cpus * 2.0;
-        let exceeded = load > threshold;
         return CheckResult {
             check_id: check.id.clone(),
             value: format!("{:.2}", load),
             numeric_value: Some(load),
-            exceeded_threshold: exceeded,
-            message: if exceeded {
-                format!("Load {:.2} exceeds {} CPU cores ×2 = {:.1}", load, cpus, threshold)
+            exceeded_threshold: load > threshold,
+            message: if load > threshold {
+                format!(
+                    "Load {:.2} exceeds {} CPU cores ×2 = {:.1}",
+                    load, cpus, threshold
+                )
             } else {
                 format!("Load {:.2} ({} cores) — OK", load, cpus)
             },
@@ -389,9 +535,8 @@ fn check_load(check: &WatchCheck) -> CheckResult {
 }
 
 fn check_services(check: &WatchCheck) -> CheckResult {
-    let critical = vec!["sshd", "nginx", "docker"];
+    let critical = ["sshd", "nginx", "docker"];
     let mut down = vec![];
-
     for svc in &critical {
         if let Ok(out) = Command::new("systemctl")
             .args(["is-active", "--quiet", &format!("{}.service", svc)])
@@ -402,11 +547,14 @@ fn check_services(check: &WatchCheck) -> CheckResult {
             }
         }
     }
-
     let exceeded = !down.is_empty();
     CheckResult {
         check_id: check.id.clone(),
-        value: if exceeded { down.join(", ") } else { "all OK".into() },
+        value: if exceeded {
+            down.join(", ")
+        } else {
+            "all OK".into()
+        },
         numeric_value: Some(down.len() as f64),
         exceeded_threshold: exceeded,
         message: if exceeded {
@@ -420,8 +568,6 @@ fn check_services(check: &WatchCheck) -> CheckResult {
 fn check_security(check: &WatchCheck) -> CheckResult {
     let mut failed = 0usize;
     let mut bans = 0usize;
-
-    // Check failed SSH logins
     if let Ok(out) = Command::new("grep")
         .args(["-c", "Failed password", "/var/log/auth.log"])
         .output()
@@ -430,8 +576,6 @@ fn check_security(check: &WatchCheck) -> CheckResult {
             failed = s.trim().parse().unwrap_or(0);
         }
     }
-
-    // Check fail2ban
     if let Ok(out) = Command::new("fail2ban-client")
         .args(["status", "sshd"])
         .output()
@@ -448,7 +592,6 @@ fn check_security(check: &WatchCheck) -> CheckResult {
             }
         }
     }
-
     let exceeded = failed > 10 || bans > 0;
     CheckResult {
         check_id: check.id.clone(),
@@ -456,7 +599,10 @@ fn check_security(check: &WatchCheck) -> CheckResult {
         numeric_value: Some(failed as f64),
         exceeded_threshold: exceeded,
         message: if exceeded {
-            format!("Security alert: {} failed logins, {} banned IPs", failed, bans)
+            format!(
+                "Security alert: {} failed logins, {} banned IPs",
+                failed, bans
+            )
         } else {
             format!("Security OK ({} failed logins)", failed)
         },

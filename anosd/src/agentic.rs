@@ -3,8 +3,8 @@
 //! Phase 5: agent receives a goal → plans steps → executes → verifies → reports.
 //! No human intervention needed between steps.
 
-use crate::provider::{ChatCompletionRequest, ChatMessage};
 use crate::provider::ProviderRegistry;
+use crate::provider::{ChatCompletionRequest, ChatMessage};
 use crate::tools::ToolRegistry;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -73,9 +73,10 @@ impl AgenticEngine {
         tools: &ToolRegistry,
     ) -> Option<ExecutionPlan> {
         let schemas = tools.schemas();
-        let tool_list: Vec<String> = schemas.iter().map(|s| {
-            format!("- {}: {} (params: {})", s.name, s.description, s.parameters)
-        }).collect();
+        let tool_list: Vec<String> = schemas
+            .iter()
+            .map(|s| format!("- {}: {} (params: {})", s.name, s.description, s.parameters))
+            .collect();
 
         let prompt = format!(
             r#"You are an autonomous OS agent. Plan the steps to achieve the user's goal.
@@ -107,7 +108,8 @@ Rules:
 - Only use tools from the list above
 - Include success_criteria for when to stop
 "#,
-            goal, tool_list.join("\n")
+            goal,
+            tool_list.join("\n")
         );
 
         let messages = vec![
@@ -136,16 +138,22 @@ Rules:
 
         match registry.read().await.active().chat(req).await {
             Ok(resp) => {
-                let content = resp.choices.first()
+                let content = resp
+                    .choices
+                    .first()
                     .and_then(|c| c.message.content.clone())
                     .unwrap_or_default();
                 // Try to extract JSON from markdown fences
                 let json_str = if content.contains("```json") {
-                    content.split("```json").nth(1)
+                    content
+                        .split("```json")
+                        .nth(1)
                         .and_then(|s| s.split("```").next())
                         .unwrap_or(&content)
                 } else if content.contains("```") {
-                    content.split("```").nth(1)
+                    content
+                        .split("```")
+                        .nth(1)
                         .and_then(|s| s.split("```").next())
                         .unwrap_or(&content)
                 } else {
@@ -180,7 +188,9 @@ Rules:
             None => {
                 return AgenticResult {
                     goal: goal.to_string(),
-                    status: TaskStatus::Failed { reason: "LLM plan generation failed".into() },
+                    status: TaskStatus::Failed {
+                        reason: "LLM plan generation failed".into(),
+                    },
                     plan: vec![],
                     results,
                     summary: "Could not generate a plan. Try a more specific goal.".into(),
@@ -191,11 +201,7 @@ Rules:
             }
         };
 
-        tracing::info!(
-            "Agentic: planned {} steps for '{}'",
-            plan.steps.len(),
-            goal
-        );
+        tracing::info!("Agentic: planned {} steps for '{}'", plan.steps.len(), goal);
 
         // Phase 2: Execute step by step
         let total_steps = plan.steps.len().min(max_steps);
@@ -211,15 +217,17 @@ Rules:
 
             results.push(format!(
                 "📋 Step {}/{}: {} → {} ({})",
-                i + 1, total_steps, step.tool_name, step.action, step.reason
+                i + 1,
+                total_steps,
+                step.tool_name,
+                step.action,
+                step.reason
             ));
 
             // Execute the tool
-            let tool_result = tools.execute(
-                &step.tool_name,
-                &step.params,
-                confirm_dangerous,
-            ).await;
+            let tool_result = tools
+                .execute(&step.tool_name, &step.params, confirm_dangerous)
+                .await;
 
             if tool_result.success {
                 results.push(format!("   ✅ {}", tool_result.output));
@@ -229,14 +237,20 @@ Rules:
                 if step.action == "install" || step.action == "remove" {
                     // Verify by checking package info
                     if let Some(pkg) = step.params["package"].as_str() {
-                        let verify = tools.execute(
-                            "package",
-                            &serde_json::json!({"action": "info", "package": pkg}),
-                            false,
-                        ).await;
+                        let verify = tools
+                            .execute(
+                                "package",
+                                &serde_json::json!({"action": "info", "package": pkg}),
+                                false,
+                            )
+                            .await;
                         results.push(format!(
                             "   🔍 Verify: {}",
-                            if verify.success { "✅ Confirmed" } else { "⚠️ Check failed" }
+                            if verify.success {
+                                "✅ Confirmed"
+                            } else {
+                                "⚠️ Check failed"
+                            }
                         ));
                     }
                 }
@@ -248,11 +262,7 @@ Rules:
 
                 if needs_confirm && confirm_dangerous {
                     // Retry with confirmation
-                    let retry = tools.execute(
-                        &step.tool_name,
-                        &step.params,
-                        true,
-                    ).await;
+                    let retry = tools.execute(&step.tool_name, &step.params, true).await;
                     if retry.success {
                         results.push(format!("   ✅ (auto-confirmed) {}", retry.output));
                         completed += 1;
@@ -261,7 +271,10 @@ Rules:
                         failed += 1;
                     }
                 } else if needs_confirm {
-                    results.push("   ⚠️ Skipped (needs confirmation, use '/auto confirm <goal>')".to_string());
+                    results.push(
+                        "   ⚠️ Skipped (needs confirmation, use '/auto confirm <goal>')"
+                            .to_string(),
+                    );
                     failed += 1;
                 } else {
                     results.push(format!("   ❌ {}", err));
@@ -274,7 +287,9 @@ Rules:
         let status = if failed == 0 || completed > 0 {
             TaskStatus::Completed
         } else {
-            TaskStatus::Failed { reason: format!("{} steps failed", failed) }
+            TaskStatus::Failed {
+                reason: format!("{} steps failed", failed),
+            }
         };
 
         let summary = format!(

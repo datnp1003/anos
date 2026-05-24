@@ -375,35 +375,48 @@ async fn handle_connection(
                     if sub == "on" || sub == "enable" {
                         if parts.len() > 2 {
                             let msg = watcher.enable(parts[2]).await;
-                            writer.write_all(format!("{}\n[END]\n", msg).as_bytes()).await?;
+                            writer
+                                .write_all(format!("{}\n[END]\n", msg).as_bytes())
+                                .await?;
                         } else {
                             writer.write_all(b"Usage: /watch on <disk|ram|updates|load|services|security|all>\n[END]\n").await?;
                         }
                     } else if sub == "off" || sub == "disable" {
                         if parts.len() > 2 {
-                            if parts[2] == "all" {
-                                for id in &["disk","ram","updates","load","services","security"] {
-                                    watcher.disable(id).await;
-                                }
-                                writer.write_all(b"All watches disabled.\n[END]\n").await?;
-                            } else {
-                                let msg = watcher.disable(parts[2]).await;
-                                writer.write_all(format!("{}\n[END]\n", msg).as_bytes()).await?;
-                            }
+                            let msg = watcher.disable(parts[2]).await;
+                            writer
+                                .write_all(format!("{}\n[END]\n", msg).as_bytes())
+                                .await?;
                         } else {
                             writer.write_all(b"Usage: /watch off <disk|ram|updates|load|services|security|all>\n[END]\n").await?;
                         }
-                    } else if sub == "all" || sub == "on" && parts.len() == 2 {
-                        for id in &["disk","ram","updates","load","services","security"] {
-                            watcher.enable(id).await;
+                    } else if sub == "threshold" {
+                        if parts.len() > 3 {
+                            let threshold = parts[3].parse::<f64>().unwrap_or(0.0);
+                            let msg = watcher.set_threshold(parts[2], threshold).await;
+                            writer
+                                .write_all(format!("{}\n[END]\n", msg).as_bytes())
+                                .await?;
+                        } else {
+                            writer
+                                .write_all(b"Usage: /watch threshold <check> <value>\n[END]\n")
+                                .await?;
                         }
-                        writer.write_all(b"All watches enabled.\n[END]\n").await?;
+                    } else if sub == "all" || sub == "on" && parts.len() == 2 {
+                        let msg = watcher.enable("all").await;
+                        writer
+                            .write_all(format!("{}\n[END]\n", msg).as_bytes())
+                            .await?;
                     } else {
-                        writer.write_all(b"Usage: /watch on|off <check>\n[END]\n").await?;
+                        writer
+                            .write_all(b"Usage: /watch on|off|threshold <check>\n[END]\n")
+                            .await?;
                     }
                 } else {
                     let summary = watcher.summary().await;
-                    writer.write_all(format!("{}\n[END]\n", summary).as_bytes()).await?;
+                    writer
+                        .write_all(format!("{}\n[END]\n", summary).as_bytes())
+                        .await?;
                 }
             }
             "/checks" => {
@@ -414,12 +427,70 @@ async fn handle_connection(
                     let val = c.last_value.as_deref().unwrap_or("-");
                     out.push_str(&format!(
                         "  {} {} — {} (every {}s) [{}] alert: {}x\n",
-                        status, c.name, c.description, c.interval_secs,
-                        val, c.alert_count
+                        status, c.name, c.description, c.interval_secs, val, c.alert_count
                     ));
                 }
-                out.push_str("\n/watch on <id> to enable, /watch off <id> to disable\n");
-                writer.write_all(format!("{}\n[END]\n", out).as_bytes()).await?;
+                out.push_str("\n/watch on <id>, /watch off <id>, /watch threshold <id> <value>\n");
+                writer
+                    .write_all(format!("{}\n[END]\n", out).as_bytes())
+                    .await?;
+            }
+            "/alerts" => {
+                let alerts = watcher.alerts(10).await;
+                if alerts.is_empty() {
+                    writer
+                        .write_all(b"No watcher alerts stored.\n[END]\n")
+                        .await?;
+                } else {
+                    let mut out = String::from("🚨 Recent Watcher Alerts:\n");
+                    for a in &alerts {
+                        out.push_str(&format!(
+                            "  [{}] {:?} {}: {} ({})\n",
+                            a.timestamp.chars().take(19).collect::<String>(),
+                            a.severity,
+                            a.check_name,
+                            a.message,
+                            a.value
+                        ));
+                    }
+                    writer
+                        .write_all(format!("{}\n[END]\n", out).as_bytes())
+                        .await?;
+                }
+            }
+            "/memsearch" => {
+                if parts.len() > 1 {
+                    let hits = memory.semantic_search(parts[1], 10);
+                    let mut out = format!(
+                        "🧠 Semantic memory backend: {}\n",
+                        memory.semantic_backend()
+                    );
+                    for h in &hits {
+                        out.push_str(&format!(
+                            "  {:.2} [{}] {}: {}\n",
+                            h.score,
+                            h.entry.timestamp.chars().take(16).collect::<String>(),
+                            h.entry.category,
+                            h.entry.content.chars().take(160).collect::<String>()
+                        ));
+                    }
+                    writer
+                        .write_all(format!("{}\n[END]\n", out).as_bytes())
+                        .await?;
+                } else {
+                    writer
+                        .write_all(b"Usage: /memsearch <query>\n[END]\n")
+                        .await?;
+                }
+            }
+            "/stream" => {
+                let mut out = String::from("📡 Streaming scaffold active. Current Unix socket can emit [EVENT:*] frames; SSE/gRPC transport can reuse StreamEvent JSON.\n");
+                out.push_str(
+                    "Supported events: START, DELTA, TOOL_START, TOOL_RESULT, ALERT, ERROR, END\n",
+                );
+                writer
+                    .write_all(format!("{}[END]\n", out).as_bytes())
+                    .await?;
             }
             "/auto" => {
                 if parts.len() > 1 {
@@ -430,15 +501,18 @@ async fn handle_connection(
                     } else {
                         goal.clone()
                     };
-                    writer.write_all(format!("🤖 Agentic mode: '{}'\n🧠 Planning...\n", real_goal).as_bytes()).await?;
-                    let result = AgenticEngine::run(
-                        &real_goal,
-                        &registry,
-                        &mut session.tools,
-                        confirm,
-                        5,
-                    ).await;
-                    writer.write_all(format!("{}\n[END]\n", result.summary).as_bytes()).await?;
+                    writer
+                        .write_all(
+                            format!("🤖 Agentic mode: '{}'\n🧠 Planning...\n", real_goal)
+                                .as_bytes(),
+                        )
+                        .await?;
+                    let result =
+                        AgenticEngine::run(&real_goal, &registry, &mut session.tools, confirm, 5)
+                            .await;
+                    writer
+                        .write_all(format!("{}\n[END]\n", result.summary).as_bytes())
+                        .await?;
                 } else {
                     writer.write_all(b"Usage: /auto <goal> -- autonomous multi-step task\n  /auto confirm <goal> -- auto-confirm dangerous steps\n[END]\n").await?;
                 }
@@ -446,7 +520,7 @@ async fn handle_connection(
             "/help" => {
                 writer
                     .write_all(
-                        "Commands:\n  /model [id] — switch provider\n  /providers — list providers\n  /tools — list tools\n  /auto <goal> — autonomous multi-step task\n  /watch — proactive monitoring\n  /checks — list scheduled checks\n  /memory — show memory\n  /audit — show audit log\n  /spawn <cmd> — spawn sub-agent\n  /agents — list sub-agents\n  /hooks — list hooks\n  /snapshot — list snapshots\n  /upgrade — check for updates\n  /ping — health check\n  /exit — quit\n[END]\n"
+                        "Commands:\n  /model [id] — switch provider\n  /providers — list providers\n  /tools — list tools\n  /auto <goal> — autonomous multi-step task\n  /watch — proactive monitoring\n  /checks — list scheduled checks\n  /alerts — latest watcher alerts\n  /memsearch <q> — semantic memory search\n  /stream — streaming scaffold status\n  /memory — show memory\n  /audit — show audit log\n  /spawn <cmd> — spawn sub-agent\n  /agents — list sub-agents\n  /hooks — list hooks\n  /snapshot — list snapshots\n  /upgrade — check for updates\n  /ping — health check\n  /exit — quit\n[END]\n"
                             .as_bytes(),
                     )
                     .await?;

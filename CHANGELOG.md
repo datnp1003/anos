@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.7.0 — 2026-05-24
+
+Phase 7: Production Agent Hardening — alerts, persistence, semantic memory, streaming scaffold.
+
+### Added
+- 🚨 **Real watcher alerts**
+  - Alerts are persisted to `watcher-alerts.jsonl`
+  - `/alerts` shows recent watcher alerts
+  - Alerts emit structured `StreamEventKind::Alert` frames in daemon logs
+  - Severity support: Info, Warning, Critical
+- 💾 **Persistent watcher config**
+  - Watch state persists to `watcher.yaml`
+  - `/watch on/off/threshold` survives daemon restarts
+  - `/watch threshold <check> <value>` changes thresholds
+- 🧠 **Semantic memory abstraction**
+  - `SemanticMemory` trait
+  - `JsonlSemanticMemory` lexical/tag-scored fallback
+  - `QdrantSemanticMemory` placeholder behind trait for future backend
+  - `/memsearch <query>` command
+  - Prompt memory context now uses semantic-ranked hits when query is present
+- 📡 **Streaming scaffold**
+  - `StreamEvent` + `StreamEventKind` types
+  - Supports START, DELTA, TOOL_START, TOOL_RESULT, ALERT, ERROR, END
+  - `/stream` command documents current event protocol
+  - Future SSE/gRPC can reuse same JSON event model
+
+### Changed
+- Watcher constructor now takes data dir and loads persisted config/alerts
+- `/help` updated with `/alerts`, `/memsearch`, `/stream`
+
 ## v0.6.0 — 2026-05-24
 
 Phase 6: Proactive Scheduling — Anos tự chạy checks định kỳ, không cần user trigger.

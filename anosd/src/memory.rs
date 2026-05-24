@@ -2,6 +2,7 @@
 //!
 //! Phase 2: learns from tool results, remembers fixes, preferences, and system state.
 
+use crate::vector_memory::{JsonlSemanticMemory, SemanticHit, SemanticMemory};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -132,6 +133,15 @@ impl Memory {
         matched
     }
 
+    /// Semantic/vector-ready search. Uses JSONL lexical fallback for now.
+    pub fn semantic_search(&self, query: &str, limit: usize) -> Vec<SemanticHit> {
+        JsonlSemanticMemory::new(self.entries.clone()).search_semantic(query, limit)
+    }
+
+    pub fn semantic_backend(&self) -> &'static str {
+        JsonlSemanticMemory::new(Vec::new()).backend_name()
+    }
+
     /// Get recent entries for context injection
     pub fn recent(&self, limit: usize) -> Vec<&MemoryEntry> {
         self.entries.iter().rev().take(limit).collect()
@@ -150,10 +160,33 @@ impl Memory {
 
     /// Build a context string for the system prompt
     pub fn build_context(&self, query: Option<&str>, max_chars: usize) -> String {
+        let semantic_hits;
+        let recent_entries;
         let entries: Vec<&MemoryEntry> = if let Some(q) = query {
+            semantic_hits = self.semantic_search(q, 10);
+            if !semantic_hits.is_empty() {
+                let mut ctx = format!("## Relevant Memory ({})\n\n", self.semantic_backend());
+                for hit in &semantic_hits {
+                    let e = &hit.entry;
+                    let line = format!(
+                        "- [score {:.2}] [{}] {}: {}\n",
+                        hit.score,
+                        e.timestamp.chars().take(19).collect::<String>(),
+                        e.category,
+                        e.content.chars().take(200).collect::<String>(),
+                    );
+                    if ctx.len() + line.len() > max_chars {
+                        ctx.push_str("... (truncated)\n");
+                        break;
+                    }
+                    ctx.push_str(&line);
+                }
+                return ctx;
+            }
             self.search(q, 10)
         } else {
-            self.recent(10)
+            recent_entries = self.recent(10);
+            recent_entries
         };
 
         if entries.is_empty() {

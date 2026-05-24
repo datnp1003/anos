@@ -8,9 +8,11 @@ mod memory;
 mod provider;
 mod snapshot;
 mod spawn;
+mod streaming;
 mod systemmap;
 mod tools;
 mod upgrade;
+mod vector_memory;
 mod watcher;
 
 use anyhow::Result;
@@ -80,7 +82,7 @@ async fn main() -> Result<()> {
     tracing::info!("Memory: {} entries", mem.stats());
 
     // Phase 6: start proactive watcher
-    let watcher = Arc::new(Watcher::new());
+    let watcher = Arc::new(Watcher::new(&dir));
     watcher.start().await;
 
     let server = IpcServer::new(socket, registry, Arc::new(ctx), dir, watcher);

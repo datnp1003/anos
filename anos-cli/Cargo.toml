@@ -1,6 +1,6 @@
 [package]
 name = "anos-cli"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 description = "Anos AI Native OS - CLI Client"
 
