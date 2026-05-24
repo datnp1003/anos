@@ -153,24 +153,16 @@ async fn handle_connection(
         let normalized = msg.to_lowercase();
 
         // ── Confirmation flow ──
-        if matches!(
-            normalized.as_str(),
-            "yes" | "y" | "ok" | "okay" | "đồng ý" | "dong y" | "làm đi" | "lam di" | "confirm"
-        ) && execute_pending(&mut session, &mut writer, &audit).await
+        if matches!(normalized.as_str(), "yes" | "y" | "ok" | "okay" | "confirm")
+            && execute_pending(&mut session, &mut writer, &audit).await
         {
             continue;
         }
-        if matches!(
-            normalized.as_str(),
-            "continue" | "cont" | "tiếp tục" | "tiep tuc" | "làm tiếp" | "lam tiep"
-        ) {
+        if matches!(normalized.as_str(), "continue" | "cont") {
             continue_loop(&mut session, &registry, &mut writer).await;
             continue;
         }
-        if matches!(
-            normalized.as_str(),
-            "no" | "n" | "cancel" | "hủy" | "huy" | "không" | "khong"
-        ) {
+        if matches!(normalized.as_str(), "no" | "n" | "cancel") {
             if let Some(p) = session.pending.take() {
                 audit.log_confirmation(&p.summary, false).await;
                 writer
@@ -279,7 +271,7 @@ async fn handle_connection(
                 writer
                     .write_all(
                         format!(
-                            "🔁 Tool loop limit: {} | tool output: {}\nUsage: /loop 8, /loop quiet, /loop verbose, or say 'tiếp tục' after limit.\n[END]\n",
+                            "🔁 Tool loop limit: {} | tool output: {}\nUsage: /loop 8, /loop quiet, /loop verbose, or run /continue after limit.\n[END]\n",
                             session.loop_limit,
                             if session.verbose_tools { "verbose" } else { "quiet" }
                         )
@@ -1161,7 +1153,7 @@ async fn process_chat(
                         writer
                             .write_all(
                                 format!(
-                                    ">> ⚠️ Tool loop limit ({}) reached before final answer.\n>> Type /continue (or 'tiếp tục') to continue from current tool state, or /loop <n> to change the limit.\n[END]\n",
+                                    ">> ⚠️ Tool loop limit ({}) reached before final answer.\n>> Type /continue to continue from current tool state, or /loop <n> to change the limit.\n[END]\n",
                                     session.loop_limit
                                 )
                                 .as_bytes(),

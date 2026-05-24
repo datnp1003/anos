@@ -1,61 +1,116 @@
-# 🦾 Anos — AI Native OS
-> Trạng thái: 2026-05-24
+# 🦾 Anos — Project Status
 
-## 📊 Tóm tắt
+Last updated: 2026-05-24
 
-| Thông số | Giá trị |
-|----------|---------|
-| Version | **v0.4.0** |
-| Branch | `dev_lor` |
-| Releases | 7 tags (v0.1.0 → v0.4.0) |
-| Code | 4,062 dòng Rust (13 module) |
-| Tests | 8 passing |
-| CI/CD | ✅ GitHub Actions (arm64 + x86_64) |
+## Summary
 
-## ✅ 4 Phase hoàn thành
+| Item | Value |
+|---|---|
+| Latest tag | `v0.9.2` |
+| Active branch | `dev_lor` |
+| Current head | post-`v0.9.2` development commit with setup/status/doctor/service/policy CLI commands |
+| Language | Rust |
+| Runtime | Linux user-space daemon + CLI |
+| Scope | AI-native Linux control plane, not a kernel/init replacement yet |
 
-### Phase 1 — Core (v0.1.0)
-- anosd daemon + anos-cli (Rust)
-- SystemMap (live OS state graph)
-- 6 AI Providers (hot-switch `/model`)
-- 5 system tools
-- Permission 4 levels
-- Install script `curl | bash`
+## Current Capabilities
 
-### Phase 2 — Intelligence (v0.2.1)
-- IntentClassifier — 10 intents, confidence scoring
-- Memory System — JSONL persistent, search, context
-- AuditLogger — thread-safe, full trace
-- SystemMap intent-filtering
+- Rust daemon: `anosd`
+- Rust CLI: `anos-cli`
+- Wrapper command: `anos`
+- Unix socket IPC: `/tmp/anos.sock`
+- OpenAI-compatible provider registry
+- Local slash commands that do not call AI
+- System tools:
+  - `package`
+  - `process`
+  - `service`
+  - `filesystem`
+  - `network`
+- Intent classifier
+- SystemMap context
+- JSONL memory
+- Qdrant-backed semantic memory path
+- Audit log
+- Hook registry
+- Sub-agent spawn registry
+- Btrfs snapshot helper
+- Self-upgrade helper
+- Proactive watcher and persisted alerts
+- Agentic multi-step loop
+- Configurable tool-loop limit
+- `/continue` support after loop limit
+- CLI slash-command completion
+- Minimal SSE server
+- CLI setup/status/doctor/service/policy commands
 
-### Phase 3 — Speed + Extensibility (v0.3.0)
-- Sub-agent Spawn — background parallel tasks
-- Hook System — 9 events, shell-based plugins
+## Released Milestones
 
-### Phase 4 — Safety + Evolution (v0.4.0)
-- Snapshot System — btrfs auto-snapshot before dangerous ops
-- Self-Upgrade — binary/source upgrade, auto-rollback
+| Version | Summary |
+|---|---|
+| `v0.1.0` | Core daemon, CLI, SystemMap, providers, tools, installer |
+| `v0.2.1` | Intent classifier, JSONL memory, audit logger |
+| `v0.3.0` | Sub-agent spawn and hooks |
+| `v0.4.0` | Snapshot and self-upgrade helpers |
+| `v0.5.0` | Agentic multi-step loop |
+| `v0.6.0` | Proactive watcher |
+| `v0.7.0` | Watcher persistence, semantic memory abstraction, streaming scaffold |
+| `v0.8.0` | Qdrant HTTP client and semantic memory commands |
+| `v0.8.1` | Fixed CLI output swallowing slash-command responses |
+| `v0.8.2` | Fixed 9router/OpenClaw API key loading |
+| `v0.8.3` | Fixed installed runtime assets and daemon log path |
+| `v0.8.4` | Added `/version` and `/v` |
+| `v0.9.0` | Added `/versions`, unknown slash-command guard, minimal SSE server |
+| `v0.9.1` | Configurable tool-loop limit, quiet/verbose output, `/continue`, CLI completions |
+| `v0.9.2` | Fixed immediate `/exit` behavior |
 
-## 🔧 Commands
+## Post-v0.9.2 Development
 
-| Lệnh | Chức năng |
-|------|-----------|
-| `/model [id]` | Switch AI provider |
-| `/providers` | List providers |
-| `/tools` | List tools |
-| `/memory` | Show memory |
-| `/audit` | Show audit log |
-| `/spawn <cmd>` | Run background task |
-| `/agents` | List sub-agents |
-| `/hooks` | List hooks |
-| `/snapshot` | List snapshots |
-| `/upgrade` | Check updates |
+Implemented but not released yet:
 
-## 🔮 Tiếp theo
+- `anos status`
+- `anos doctor`
+- `anos setup`
+- `anos install-service`
+- `anos policy`
+- `anos policy init`
 
-1. **ACP/Codex adapter** — future work (trung bình)
-2. **gRPC streaming** — thay Unix socket (thấp)
-3. **Qdrant Vector DB** — semantic memory upgrade (thấp)
-4. **Desktop/TUI** — GUI app (thấp)
+Commit:
 
-Tất cả 4 phase + 11 skill files đã hoàn thành ✅
+```text
+60007e0 Add CLI setup, doctor, status, service and policy commands
+```
+
+## Important Branch Note
+
+Latest development is on `dev_lor`.
+
+The `main` branch may lag behind until explicitly promoted. The command below installs whatever is on `main`, not necessarily the latest development build:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/datnp1003/anos/main/install.sh | bash
+```
+
+Use this for the development branch:
+
+```bash
+ANOS_BRANCH=dev_lor curl -fsSL https://raw.githubusercontent.com/datnp1003/anos/dev_lor/install.sh | bash
+```
+
+## Permission Model Status
+
+Current default mode is user-space.
+
+- Anos can write where the current user can write.
+- Anos cannot write to `/etc`, `/usr`, `/root`, or protected system paths unless the OS permissions allow it.
+- `anos policy init` creates `~/.anos/policy.yaml`.
+- Full runtime enforcement of `policy.yaml` is still pending.
+
+## Next Hardening Steps
+
+1. Enforce `policy.yaml` in `filesystem`, `package`, `service`, and `process` tools.
+2. Add persistent task and continuation state across daemon restarts.
+3. Add real provider token streaming to CLI/SSE.
+4. Add non-interactive setup flags for automation.
+5. Add integration tests with a mock provider and temporary `ANOS_DIR`.
+6. Promote `dev_lor` to `main` after verification.

@@ -15,7 +15,7 @@ Tool-loop UX release.
 ### Added
 - Configurable chat tool loop limit via `ANOS_TOOL_LOOP_LIMIT` and `/loop <1-20>`.
 - `/loop quiet` and `/loop verbose` to control noisy tool output.
-- `/continue` and Vietnamese `tiếp tục` to continue after hitting the loop limit from the previous tool state.
+- `/continue` to continue after hitting the loop limit from the previous tool state.
 - Built-in slash command completion in interactive CLI when typing `/` and pressing Tab.
 
 ### Fixed
@@ -127,19 +127,19 @@ Phase 7: Production Agent Hardening — alerts, persistence, semantic memory, st
 
 ## v0.6.0 — 2026-05-24
 
-Phase 6: Proactive Scheduling — Anos tự chạy checks định kỳ, không cần user trigger.
+Phase 6: Proactive Scheduling — Anos runs scheduled checks without user-triggered commands.
 
 ### Added
-- 👁️ **Proactive Watcher** — background scheduler chạy health checks tự động
+- 👁️ **Proactive Watcher** — background scheduler for automatic health checks
   - 6 built-in checks: disk, ram, updates, load, services, security
-  - Mỗi check có interval riêng (5m - 6h), threshold configurable
-  - Chạy trong `tokio::spawn` — không block daemon
+  - Each check has its own interval (5m - 6h) and configurable threshold
+  - Runs in `tokio::spawn` without blocking the daemon
 - 🎛️ `/watch` — enable/disable checks
-  - `/watch` — xem summary
-  - `/watch on disk` — bật check disk
-  - `/watch off updates` — tắt check updates
-  - `/watch all` — bật tất cả
-- 🎛️ `/checks` — list tất cả scheduled checks với status, interval, last value
+  - `/watch` — show summary
+  - `/watch on disk` — enable disk check
+  - `/watch off updates` — disable update check
+  - `/watch all` — enable all checks
+- 🎛️ `/checks` — list all scheduled checks with status, interval, and last value
 
 ### Built-in Checks
 | Check | Interval | Threshold | Default |
@@ -156,18 +156,18 @@ Phase 6: Proactive Scheduling — Anos tự chạy checks định kỳ, không c
 Phase 5: Agentic Loop — autonomous multi-step task execution.
 
 ### Added
-- 🔁 **Agentic Loop** — Anos tự plan + execute + verify multi-step tasks
-  - `/auto <goal>` — đưa goal, LLM tự lên plan, tự chạy từng bước, tự verify
-  - `/auto confirm <goal>` — tự confirm dangerous steps (batch mode)
-  - `AgenticEngine::plan()` — LLM sinh `ExecutionPlan` JSON với steps, tools, success criteria
+- 🔁 **Agentic Loop** — Anos plans, executes, and verifies multi-step tasks
+  - `/auto <goal>` — give a goal; the LLM plans, executes each step, and verifies
+  - `/auto confirm <goal>` — auto-confirm dangerous steps in batch mode
+  - `AgenticEngine::plan()` — LLM generates `ExecutionPlan` JSON with steps, tools, and success criteria
   - `AgenticEngine::run()` — execute plan → verify → report
-  - Auto-verify sau install/remove (check package info)
-  - Max 5 steps per task, auto-fallback retry cho confirmation
+  - Auto-verify after install/remove by checking package info
+  - Max 5 steps per task with confirmation retry fallback
 - 🤖 `agentic.rs` — 290 line module
 
 ### How it works
 ```
-User: /auto "cài neovim và check disk"
+User: /auto "install neovim and check disk"
   → LLM plans: [1. search neovim, 2. install neovim, 3. disk_usage]
   → Execute step 1 → ✅ Found
   → Execute step 2 → ✅ Installed
@@ -302,8 +302,8 @@ Development prerelease from `dev_lor`.
 - 📁 **FileSystemTool** — `list`, `read`, `find`, `disk_usage`, `mkdir`, `write`
 - 🌐 **NetworkTool** — `interfaces`, `listening_ports`, `routes`, `ping`, `dns_lookup`
 - 🛡️ **Pending confirmation flow** for dangerous/confirm-required tools
-  - `yes`, `y`, `ok`, `đồng ý`, `làm đi`, `confirm` execute pending action
-  - `no`, `cancel`, `hủy`, `không` cancel pending action
+  - `yes`, `y`, `ok`, `confirm` execute pending action
+  - `no`, `cancel` cancel pending action
 - 🔧 OpenAI-compatible tool schemas are now sent in chat requests
 
 ### Changed
@@ -330,7 +330,7 @@ Initial public release. First PoC with core features working.
 - 🛠️ **5 System Tools** — Package, Process, Service, FileSystem, Network
 - 🛡️ **Permission System** — 4 levels (ReadOnly, Safe, Confirm, Dangerous)
 - 📋 **10 Domain Skills** — package, system, network, filesystem, process, kernel, security, self-upgrade, gui, provider
-- 🇻🇳 **Vietnamese + English** natural language support
+- **Natural-language** operation support
 - 🚀 **Install script** — `curl | bash`, user-space only, zero sudo
 - 📄 README with usage examples and troubleshooting
 

@@ -252,7 +252,7 @@ mod tests {
 
     #[test]
     fn test_package_intent() {
-        let c = IntentClassifier::classify("Cài neovim đi");
+        let c = IntentClassifier::classify("Install neovim");
         assert_eq!(c.intent, Intent::Package);
         assert!(c.confidence > 0.85);
         assert_eq!(c.skill_name, Some("package".into()));
@@ -260,21 +260,21 @@ mod tests {
 
     #[test]
     fn test_system_diag() {
-        let c = IntentClassifier::classify("Sao máy chậm vậy?");
+        let c = IntentClassifier::classify("Check system health");
         assert_eq!(c.intent, Intent::System);
         assert!(c.confidence > 0.75);
     }
 
     #[test]
     fn test_network() {
-        let c = IntentClassifier::classify("Port nào đang mở?");
+        let c = IntentClassifier::classify("Which ports are open?");
         assert_eq!(c.intent, Intent::Network);
         assert!(c.confidence > 0.80);
     }
 
     #[test]
     fn test_chat() {
-        let c = IntentClassifier::classify("Chào Mập");
+        let c = IntentClassifier::classify("Hello there");
         assert_eq!(c.intent, Intent::Chat);
         assert!(c.confidence < 0.8);
     }
@@ -287,7 +287,7 @@ mod tests {
 
     #[test]
     fn test_filesystem() {
-        let c = IntentClassifier::classify("Còn bao nhiêu disk trống?");
+        let c = IntentClassifier::classify("How much disk space is free?");
         assert_eq!(c.intent, Intent::Filesystem);
     }
 }
