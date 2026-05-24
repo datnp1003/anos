@@ -1,12 +1,83 @@
 use anyhow::Result;
 use colored::*;
-use rustyline::DefaultEditor;
+use rustyline::completion::{Completer, Pair};
+use rustyline::highlight::Highlighter;
+use rustyline::hint::Hinter;
+use rustyline::validate::Validator;
+use rustyline::{Context, Editor, Helper};
+use rustyline::history::DefaultHistory;
 use std::{env, path::PathBuf};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::unix::OwnedReadHalf;
 use tokio::net::UnixStream;
 
 const SOCKET: &str = "/tmp/anos.sock";
+const COMMANDS: &[&str] = &[
+    "/help",
+    "/version",
+    "/v",
+    "/versions",
+    "/providers",
+    "/p",
+    "/model",
+    "/loop",
+    "/continue",
+    "/cont",
+    "/tools",
+    "/auto",
+    "/watch",
+    "/checks",
+    "/alerts",
+    "/memstatus",
+    "/memindex",
+    "/memsearch",
+    "/stream",
+    "/memory",
+    "/audit",
+    "/spawn",
+    "/agents",
+    "/hooks",
+    "/snapshot",
+    "/upgrade",
+    "/ping",
+    "/clear",
+    "/exit",
+    "/quit",
+];
+
+struct AnosHelper;
+
+impl Helper for AnosHelper {}
+impl Hinter for AnosHelper {
+    type Hint = String;
+}
+impl Highlighter for AnosHelper {}
+impl Validator for AnosHelper {}
+
+impl Completer for AnosHelper {
+    type Candidate = Pair;
+
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        _ctx: &Context<'_>,
+    ) -> rustyline::Result<(usize, Vec<Pair>)> {
+        if !line.starts_with('/') {
+            return Ok((0, Vec::new()));
+        }
+        let prefix = &line[..pos];
+        let matches = COMMANDS
+            .iter()
+            .filter(|cmd| cmd.starts_with(prefix))
+            .map(|cmd| Pair {
+                display: (*cmd).to_string(),
+                replacement: (*cmd).to_string(),
+            })
+            .collect();
+        Ok((0, matches))
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -61,7 +132,8 @@ async fn interactive(sock: &PathBuf) -> Result<()> {
     writer.write_all(b"/version\n").await?;
     let _ = read_response(&mut buf).await;
 
-    let mut rl = DefaultEditor::new()?;
+    let mut rl = Editor::<AnosHelper, DefaultHistory>::new()?;
+    rl.set_helper(Some(AnosHelper));
     let _ = rl.load_history("/tmp/anos-history.txt");
 
     loop {
@@ -168,7 +240,7 @@ fn show_help() {
     );
     println!(
         "{}",
-        "│  /version, /v  — Show Anos version   │".bright_black()
+        "│  /version, /v   — Show Anos version  │".bright_black()
     );
     println!(
         "{}",
@@ -189,6 +261,14 @@ fn show_help() {
     println!(
         "{}",
         "│  /audit         — Show audit log    │".bright_black()
+    );
+    println!(
+        "{}",
+        "│  /loop [n]      — Tool loop limit    │".bright_black()
+    );
+    println!(
+        "{}",
+        "│  /continue      — Continue max loop  │".bright_black()
     );
     println!(
         "{}",

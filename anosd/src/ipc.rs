@@ -27,10 +27,20 @@ struct PendingAction {
     summary: String,
 }
 
+#[derive(Debug, Clone)]
+struct LoopState {
+    messages: Vec<ChatMessage>,
+    model: String,
+    provider_id: String,
+}
+
 struct Session {
     messages: Vec<ChatMessage>,
     tools: ToolRegistry,
     pending: Option<PendingAction>,
+    loop_limit: usize,
+    verbose_tools: bool,
+    last_loop: Option<LoopState>,
 }
 
 impl Session {
@@ -39,6 +49,13 @@ impl Session {
             messages: Vec::new(),
             tools: ToolRegistry::new(),
             pending: None,
+            loop_limit: std::env::var("ANOS_TOOL_LOOP_LIMIT")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .map(|v| v.clamp(1, 20))
+                .unwrap_or(6),
+            verbose_tools: std::env::var("ANOS_TOOL_VERBOSE").unwrap_or_default() == "1",
+            last_loop: None,
         }
     }
 }
@@ -145,6 +162,13 @@ async fn handle_connection(
         }
         if matches!(
             normalized.as_str(),
+            "continue" | "cont" | "tiếp tục" | "tiep tuc" | "làm tiếp" | "lam tiep"
+        ) {
+            continue_loop(&mut session, &registry, &mut writer).await;
+            continue;
+        }
+        if matches!(
+            normalized.as_str(),
             "no" | "n" | "cancel" | "hủy" | "huy" | "không" | "khong"
         ) {
             if let Some(p) = session.pending.take() {
@@ -235,6 +259,34 @@ async fn handle_connection(
                         )
                         .await?;
                 }
+            }
+            "/loop" => {
+                if parts.len() > 1 {
+                    let arg = parts[1].trim();
+                    if arg == "verbose" || arg == "verbose on" {
+                        session.verbose_tools = true;
+                    } else if arg == "quiet" || arg == "verbose off" {
+                        session.verbose_tools = false;
+                    } else if let Ok(n) = arg.parse::<usize>() {
+                        session.loop_limit = n.clamp(1, 20);
+                    } else {
+                        writer.write_all(b"Usage: /loop [1-20|verbose|quiet]\n[END]\n").await?;
+                        continue;
+                    }
+                }
+                writer
+                    .write_all(
+                        format!(
+                            "🔁 Tool loop limit: {} | tool output: {}\nUsage: /loop 8, /loop quiet, /loop verbose, or say 'tiếp tục' after limit.\n[END]\n",
+                            session.loop_limit,
+                            if session.verbose_tools { "verbose" } else { "quiet" }
+                        )
+                        .as_bytes(),
+                    )
+                    .await?;
+            }
+            "/continue" | "/cont" => {
+                continue_loop(&mut session, &registry, &mut writer).await;
             }
             "/tools" => {
                 let schemas = session.tools.schemas();
@@ -558,7 +610,7 @@ async fn handle_connection(
             "/help" => {
                 writer
                     .write_all(
-                        "Commands:\n  /version — show Anos version\n  /model [id] — switch provider\n  /providers — list providers\n  /tools — list tools\n  /auto <goal> — autonomous multi-step task\n  /watch — proactive monitoring\n  /checks — list scheduled checks\n  /alerts — latest watcher alerts\n  /memstatus — Qdrant/fallback memory status\n  /memindex — index memory into Qdrant\n  /memsearch <q> — semantic memory search\n  /stream — streaming scaffold status\n  /memory — show memory\n  /audit — show audit log\n  /spawn <cmd> — spawn sub-agent\n  /agents — list sub-agents\n  /hooks — list hooks\n  /snapshot — list snapshots\n  /upgrade — check for updates\n  /ping — health check\n  /exit — quit\n[END]\n"
+                        "Commands:\n  /version — show Anos version\n  /model [id] — switch provider\n  /providers — list providers\n  /loop [n|quiet|verbose] — configure tool loop limit/output\n  /continue — continue after tool loop limit\n  /tools — list tools\n  /auto <goal> — autonomous multi-step task\n  /watch — proactive monitoring\n  /checks — list scheduled checks\n  /alerts — latest watcher alerts\n  /memstatus — Qdrant/fallback memory status\n  /memindex — index memory into Qdrant\n  /memsearch <q> — semantic memory search\n  /stream — streaming scaffold status\n  /memory — show memory\n  /audit — show audit log\n  /spawn <cmd> — spawn sub-agent\n  /agents — list sub-agents\n  /hooks — list hooks\n  /snapshot — list snapshots\n  /upgrade — check for updates\n  /ping — health check\n  /exit — quit\n[END]\n"
                             .as_bytes(),
                     )
                     .await?;
@@ -593,6 +645,18 @@ async fn handle_connection(
     Ok(())
 }
 
+fn format_tool_output(output: &str, verbose: bool) -> String {
+    if verbose || output.chars().count() <= 320 {
+        return output.to_string();
+    }
+    let preview: String = output.chars().take(320).collect();
+    format!(
+        "{}… [truncated {} chars; use /loop verbose for full tool output]",
+        preview.replace('\n', " "),
+        output.chars().count()
+    )
+}
+
 async fn execute_pending(
     session: &mut Session,
     writer: &mut (impl AsyncWrite + Unpin),
@@ -619,7 +683,14 @@ async fn execute_pending(
             .log_tool_result(&pending.tool_name, true, &r.output, Some(duration_ms))
             .await;
         writer
-            .write_all(format!(">> 🔧 {}: {}\n[END]\n", pending.tool_name, r.output).as_bytes())
+            .write_all(
+                format!(
+                    ">> 🔧 {}: {}\n[END]\n",
+                    pending.tool_name,
+                    format_tool_output(&r.output, session.verbose_tools)
+                )
+                .as_bytes(),
+            )
             .await
             .ok();
     } else if let Some(e) = r.error {
@@ -640,6 +711,132 @@ async fn execute_pending(
             .ok();
     }
     true
+}
+
+async fn continue_loop(
+    session: &mut Session,
+    registry: &Arc<RwLock<ProviderRegistry>>,
+    writer: &mut (impl AsyncWrite + Unpin),
+) {
+    let Some(state) = session.last_loop.take() else {
+        writer
+            .write_all(">> ⚠️ Nothing to continue. Ask a new question first.\n[END]\n".as_bytes())
+            .await
+            .ok();
+        return;
+    };
+
+    writer
+        .write_all(">> ▶️ Continuing from previous tool state...\n".as_bytes())
+        .await
+        .ok();
+
+    let mut loop_messages = state.messages;
+    for step in 0..session.loop_limit {
+        let req = ChatCompletionRequest {
+            model: state.model.clone(),
+            messages: loop_messages.clone(),
+            temperature: Some(0.7),
+            max_tokens: Some(2048),
+            stream: None,
+            tools: Some(openai_tool_schemas(&session.tools.schemas())),
+        };
+
+        let result = { registry.read().await.active().chat(req).await };
+        match result {
+            Ok(resp) => {
+                let choice = resp.choices.first();
+                let content = choice.and_then(|c| c.message.content.clone()).unwrap_or_default();
+                let tool_calls = choice.and_then(|c| c.message.tool_calls.clone());
+
+                if let Some(calls) = tool_calls {
+                    if calls.is_empty() {
+                        finish_assistant_response(&content, &state.provider_id, session, writer)
+                            .await;
+                        return;
+                    }
+
+                    loop_messages.push(ChatMessage {
+                        role: "assistant".into(),
+                        content: content.clone(),
+                        tool_calls: Some(calls.clone()),
+                        tool_call_id: None,
+                    });
+
+                    for call in &calls {
+                        let params: serde_json::Value =
+                            serde_json::from_str(&call.function.arguments).unwrap_or_default();
+                        let r = session
+                            .tools
+                            .execute(&call.function.name, &params, false)
+                            .await;
+                        if r.success {
+                            writer
+                                .write_all(
+                                    format!(
+                                        ">> 🔧 {}: {}\n",
+                                        call.function.name,
+                                        format_tool_output(&r.output, session.verbose_tools)
+                                    )
+                                    .as_bytes(),
+                                )
+                                .await
+                                .ok();
+                            loop_messages.push(ChatMessage {
+                                role: "tool".into(),
+                                content: r.output,
+                                tool_calls: None,
+                                tool_call_id: Some(call.id.clone()),
+                            });
+                        } else {
+                            let err = r.error.unwrap_or_else(|| "tool failed".into());
+                            writer
+                                .write_all(
+                                    format!(">> ❌ {}: {}\n", call.function.name, err).as_bytes(),
+                                )
+                                .await
+                                .ok();
+                            loop_messages.push(ChatMessage {
+                                role: "tool".into(),
+                                content: format!("ERROR: {}", err),
+                                tool_calls: None,
+                                tool_call_id: Some(call.id.clone()),
+                            });
+                        }
+                    }
+
+                    if step + 1 == session.loop_limit {
+                        session.last_loop = Some(LoopState {
+                            messages: loop_messages.clone(),
+                            model: state.model.clone(),
+                            provider_id: state.provider_id.clone(),
+                        });
+                        writer
+                            .write_all(
+                                format!(
+                                    ">> ⚠️ Tool loop limit ({}) reached again. Type /continue to continue.\n[END]\n",
+                                    session.loop_limit
+                                )
+                                .as_bytes(),
+                            )
+                            .await
+                            .ok();
+                        return;
+                    }
+                } else {
+                    finish_assistant_response(&content, &state.provider_id, session, writer).await;
+                    return;
+                }
+            }
+            Err(e) => {
+                writer
+                    .write_all(format!(">> ❌ {}\n[END]\n", e).as_bytes())
+                    .await
+                    .ok();
+                return;
+            }
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -725,7 +922,8 @@ async fn process_chat(
         tools,
     };
 
-    for step in 0..3 {
+    session.last_loop = None;
+    for step in 0..session.loop_limit {
         let result = { registry.read().await.active().chat(req).await };
         match result {
             Ok(resp) => {
@@ -844,8 +1042,12 @@ async fn process_chat(
 
                             writer
                                 .write_all(
-                                    format!(">> 🔧 {}: {}\n", call.function.name, r.output)
-                                        .as_bytes(),
+                                    format!(
+                                        ">> 🔧 {}: {}\n",
+                                        call.function.name,
+                                        format_tool_output(&r.output, session.verbose_tools)
+                                    )
+                                    .as_bytes(),
                                 )
                                 .await
                                 .ok();
@@ -946,11 +1148,19 @@ async fn process_chat(
                         stream: None,
                         tools: Some(openai_tool_schemas(&session.tools.schemas())),
                     };
-                    if step == 2 {
+                    if step + 1 == session.loop_limit {
+                        session.last_loop = Some(LoopState {
+                            messages: loop_messages.clone(),
+                            model: model.clone(),
+                            provider_id: pid.clone(),
+                        });
                         writer
                             .write_all(
-                                ">> ⚠️ Tool loop limit reached before final answer.\n[END]\n"
-                                    .as_bytes(),
+                                format!(
+                                    ">> ⚠️ Tool loop limit ({}) reached before final answer.\n>> Type /continue (or 'tiếp tục') to continue from current tool state, or /loop <n> to change the limit.\n[END]\n",
+                                    session.loop_limit
+                                )
+                                .as_bytes(),
                             )
                             .await
                             .ok();

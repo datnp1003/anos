@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.9.1 — 2026-05-24
+
+Tool-loop UX release.
+
+### Added
+- Configurable chat tool loop limit via `ANOS_TOOL_LOOP_LIMIT` and `/loop <1-20>`.
+- `/loop quiet` and `/loop verbose` to control noisy tool output.
+- `/continue` and Vietnamese `tiếp tục` to continue after hitting the loop limit from the previous tool state.
+- Built-in slash command completion in interactive CLI when typing `/` and pressing Tab.
+
+### Fixed
+- Default tool loop limit increased from 3 to 6.
+- Tool output is quiet/truncated by default to avoid dumping too much system data.
+
 ## v0.9.0 — 2026-05-24
 
 UX + SSE release.
