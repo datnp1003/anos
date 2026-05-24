@@ -1,11 +1,14 @@
 use crate::audit::{AuditLevel, AuditLogger, PermissionResult};
 use crate::context::PromptContext;
+use crate::hooks::{HookEvent, HookRegistry};
 use crate::intent::IntentClassifier;
 use crate::memory::Memory;
 use crate::provider::{ChatCompletionRequest, ChatMessage, ProviderRegistry};
+use crate::spawn::{AgentRegistry, SpawnConfig};
 use crate::systemmap::SystemMap;
 use crate::tools::{ToolRegistry, ToolSchema};
 use anyhow::Result;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::AsyncWrite;
@@ -91,6 +94,11 @@ async fn handle_connection(
     let mut session = Session::new();
     let mut memory = Memory::load(data_dir)?;
     let audit = AuditLogger::new(data_dir)?;
+    let agents = AgentRegistry::new(data_dir);
+    let hooks = HookRegistry::load(data_dir).unwrap_or_else(|_| HookRegistry {
+        hooks: HashMap::new(),
+        storage_path: PathBuf::from(data_dir).join("hooks.yaml"),
+    });
 
     {
         let reg = registry.read().await;
@@ -248,10 +256,78 @@ async fn handle_connection(
                     .write_all(format!("{}\n[END]\n", out).as_bytes())
                     .await?;
             }
+            "/spawn" => {
+                if parts.len() > 1 {
+                    let cmd = parts[1].to_string();
+                    let name = format!("spawn_{}", cmd.chars().take(20).collect::<String>());
+                    let config = SpawnConfig {
+                        name: name.clone(),
+                        command: cmd.clone(),
+                        workdir: Some(data_dir.to_string()),
+                        timeout_secs: 300,
+                        env: vec![],
+                    };
+                    let agent = agents.spawn(config).await;
+                    writer.write_all(format!(
+                        "🚀 Spawned sub-agent [{}]: '{}'\n   Status: {} | Use /agents to check\n[END]\n",
+                        agent.id, agent.task, agent.status
+                    ).as_bytes()).await?;
+                } else {
+                    writer
+                        .write_all(b"Usage: /spawn <command>\n[END]\n")
+                        .await?;
+                }
+            }
+            "/agents" => {
+                let list = agents.list().await;
+                let stats = agents.stats().await;
+                let mut out = format!("🤖 {}\n", stats);
+                for a in &list {
+                    out.push_str(&format!(
+                        "  [{}] {}: {} — {}\n",
+                        a.id,
+                        a.name,
+                        a.status,
+                        a.task.chars().take(60).collect::<String>(),
+                    ));
+                    if let Some(ref out_text) = a.output {
+                        out.push_str(&format!(
+                            "    → {}\n",
+                            out_text
+                                .chars()
+                                .take(150)
+                                .collect::<String>()
+                                .replace('\n', " ")
+                        ));
+                    }
+                }
+                writer
+                    .write_all(format!("{}\n[END]\n", out).as_bytes())
+                    .await?;
+            }
+            "/hooks" => {
+                let all = hooks.list();
+                if all.is_empty() {
+                    writer.write_all(b"No hooks registered.\n[END]\n").await?;
+                } else {
+                    let mut out = String::from("🪝 Registered hooks:\n");
+                    for (event, hook) in &all {
+                        out.push_str(&format!(
+                            "  {} → {} ({})\n",
+                            event,
+                            hook.name,
+                            if hook.enabled { "enabled" } else { "disabled" }
+                        ));
+                    }
+                    writer
+                        .write_all(format!("{}\n[END]\n", out).as_bytes())
+                        .await?;
+                }
+            }
             "/help" => {
                 writer
                     .write_all(
-                        "Commands:\n  /model [id] — switch provider\n  /providers — list providers\n  /tools — list tools\n  /memory — show memory\n  /audit — show audit log\n  /ping — health check\n  /exit — quit\n[END]\n"
+                        "Commands:\n  /model [id] — switch provider\n  /providers — list providers\n  /tools — list tools\n  /memory — show memory\n  /audit — show audit log\n  /spawn <cmd> — spawn sub-agent\n  /agents — list sub-agents\n  /hooks — list hooks\n  /ping — health check\n  /exit — quit\n[END]\n"
                             .as_bytes(),
                     )
                     .await?;
@@ -265,6 +341,7 @@ async fn handle_connection(
                     &context,
                     &mut memory,
                     &audit,
+                    &hooks,
                     &mut writer,
                 )
                 .await;
@@ -323,6 +400,7 @@ async fn execute_pending(
     true
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn process_chat(
     msg: &str,
     session: &mut Session,
@@ -330,6 +408,7 @@ async fn process_chat(
     context: &PromptContext,
     memory: &mut Memory,
     audit: &AuditLogger,
+    hooks: &HookRegistry,
     writer: &mut (impl AsyncWrite + Unpin),
 ) {
     // Phase 2: proper intent classification
@@ -341,6 +420,19 @@ async fn process_chat(
     );
 
     audit.log_user_message(msg, &classification.summary).await;
+
+    // Phase 3: fire pre-chat hooks
+    if hooks.has_hooks(&HookEvent::PreChat) {
+        let results = hooks.fire(&HookEvent::PreChat, Some(msg)).await;
+        for r in &results {
+            tracing::info!(
+                "Hook '{}' → {} ({}ms)",
+                r.hook_name,
+                if r.success { "OK" } else { "FAIL" },
+                r.duration_ms
+            );
+        }
+    }
 
     session.messages.push(ChatMessage {
         role: "user".into(),
@@ -423,6 +515,24 @@ async fn process_chat(
                             call.function.name,
                             call.function.arguments
                         );
+
+                        // Phase 3: fire pre-tool hooks
+                        if hooks.has_hooks(&HookEvent::PreTool(call.function.name.clone())) {
+                            let hr = hooks
+                                .fire(
+                                    &HookEvent::PreTool(call.function.name.clone()),
+                                    Some(&call.function.arguments),
+                                )
+                                .await;
+                            for h in &hr {
+                                tracing::info!(
+                                    "PreTool hook '{}' → {} ({}ms)",
+                                    h.hook_name,
+                                    if h.success { "OK" } else { "FAIL" },
+                                    h.duration_ms
+                                );
+                            }
+                        }
 
                         audit
                             .log_tool_attempt(

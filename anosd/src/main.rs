@@ -1,9 +1,11 @@
 mod audit;
 mod context;
+mod hooks;
 mod intent;
 mod ipc;
 mod memory;
 mod provider;
+mod spawn;
 mod systemmap;
 mod tools;
 

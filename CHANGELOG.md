@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.3.0 — 2026-05-24
+
+Phase 3: Sub-agent Spawn System + Hook System.
+
+### Added
+- 🤖 **Sub-agent Spawn System** — background parallel task execution with status tracking
+  - `/spawn <command>` — launch detached sub-agents
+  - `/agents` — list all agents with status and output
+  - `SubAgent` struct: id, name, task, status (Running/Completed/Failed/Killed), output
+  - Non-blocking `tokio::spawn` + persistent JSONL storage
+  - `AgentRegistry` with spawn, list, get, kill, stats
+- 🪝 **Hook System** — extensible pre/post action hooks
+  - 9 hook events: PreTool, PostTool, PreChat, PostChat, PreConfirm, PostConfirm, OnModelSwitch, OnSessionStart, OnSessionEnd
+  - `/hooks` — list registered hooks
+  - `HookRegistry` with load, register, remove, fire
+  - Shell-based hooks with ANOS_HOOK_CONTEXT + ANOS_HOOK_NAME env vars
+  - Auto-fire in IPC: PreChat + PreTool hooks active
+
+### Changed
+- IPC handler now 8-arity (process_chat takes hooks ref)
+- CLI help updated with /spawn, /agents, /hooks
+
 ## v0.2.1 — 2026-05-24
 
 Phase 2 completion: Intent Classifier, Memory System, Audit Logger.
