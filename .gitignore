@@ -6,3 +6,11 @@ Cargo.lock
 *.swp
 *.swo
 .DS_Store
+
+# Runtime state
+audit.jsonl
+watcher.yaml
+watcher-alerts.jsonl
+memory.jsonl
+subagents.jsonl
+hooks.yaml
