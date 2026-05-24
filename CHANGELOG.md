@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.10.1 — 2026-05-24
+
+Stable installer preservation release.
 
 ### Fixed
 - Installer now preserves existing user configuration and runtime state when replacing `ANOS_DIR`.
