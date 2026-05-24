@@ -137,6 +137,10 @@ async fn read_response(reader: &mut BufReader<OwnedReadHalf>) -> Result<()> {
             } else {
                 print!("{}", c);
             }
+        } else if !t.is_empty() {
+            // Slash commands such as /providers, /model, /checks return plain text
+            // (not prefixed with ">> "). Print them instead of swallowing output.
+            println!("{}", t);
         }
     }
     Ok(())

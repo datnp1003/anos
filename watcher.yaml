@@ -1,0 +1,60 @@
+- id: disk
+  name: Disk Usage
+  description: Alert when root disk exceeds threshold %
+  interval_secs: 1800
+  enabled: true
+  threshold: 85.0
+  threshold_unit: '%'
+  last_run: 2026-05-24T14:41:10.346406850+00:00
+  last_value: 37%
+  alert_count: 0
+- id: ram
+  name: Memory Usage
+  description: Alert when RAM usage exceeds threshold %
+  interval_secs: 900
+  enabled: true
+  threshold: 90.0
+  threshold_unit: '%'
+  last_run: 2026-05-24T14:41:10.346406850+00:00
+  last_value: 27.7%
+  alert_count: 0
+- id: updates
+  name: Package Updates
+  description: Alert when security updates are available
+  interval_secs: 21600
+  enabled: true
+  threshold: null
+  threshold_unit: null
+  last_run: 2026-05-24T14:41:10.346406850+00:00
+  last_value: 77 total, 1 security
+  alert_count: 1
+- id: load
+  name: System Load
+  description: Alert when load average exceeds CPU core count * 2
+  interval_secs: 600
+  enabled: false
+  threshold: null
+  threshold_unit: null
+  last_run: null
+  last_value: null
+  alert_count: 0
+- id: services
+  name: Critical Services
+  description: Alert when critical services are down
+  interval_secs: 1800
+  enabled: false
+  threshold: null
+  threshold_unit: null
+  last_run: null
+  last_value: null
+  alert_count: 0
+- id: security
+  name: Security Audit
+  description: Alert on failed SSH logins and firewall issues
+  interval_secs: 3600
+  enabled: false
+  threshold: null
+  threshold_unit: null
+  last_run: null
+  last_value: null
+  alert_count: 0

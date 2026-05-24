@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.8.1 — 2026-05-24
+
+Patch: CLI now prints plain-text daemon responses.
+
+### Fixed
+- `anos-cli` previously only printed lines prefixed with `>> `, so slash commands like `/providers`, `/model`, `/checks`, `/watch`, `/memstatus` looked like they did nothing.
+- CLI now prints raw/plain daemon lines too, while keeping tool/chat formatting.
+
 ## v0.8.0 — 2026-05-24
 
 Phase 8: Real Qdrant Semantic Memory.
