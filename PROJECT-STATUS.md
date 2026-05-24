@@ -51,10 +51,11 @@
 | `/snapshot` | List snapshots |
 | `/upgrade` | Check updates |
 
-## 🔮 Còn thiếu
+## 🔮 Tiếp theo
 
-1. **10 skill files** — có frontmatter, thiếu nội dung thật (cao)
-2. **ACP/Codex adapter** — future work (trung bình)
-3. **gRPC streaming** — thay Unix socket (thấp)
-4. **Qdrant Vector DB** — semantic memory (thấp)
-5. **Desktop/TUI** — GUI app (thấp)
+1. **ACP/Codex adapter** — future work (trung bình)
+2. **gRPC streaming** — thay Unix socket (thấp)
+3. **Qdrant Vector DB** — semantic memory upgrade (thấp)
+4. **Desktop/TUI** — GUI app (thấp)
+
+Tất cả 4 phase + 11 skill files đã hoàn thành ✅
