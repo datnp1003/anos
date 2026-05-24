@@ -48,7 +48,7 @@ async fn interactive(sock: &PathBuf) -> Result<()> {
             .bright_yellow()
             .bold()
     );
-    println!("{}", "│  /help /model /providers /exit   │".dimmed());
+    println!("{}", "│  /version /help /providers /exit │".dimmed());
     println!("{}", "╰──────────────────────────────────╯".bright_black());
 
     let stream = UnixStream::connect(sock).await?;
@@ -57,6 +57,9 @@ async fn interactive(sock: &PathBuf) -> Result<()> {
     let mut g = String::new();
     buf.read_line(&mut g).await?;
     println!("{}", g.trim().dimmed());
+    // Print daemon version on interactive startup without requiring a manual command.
+    writer.write_all(b"/version\n").await?;
+    let _ = read_response(&mut buf).await;
 
     let mut rl = DefaultEditor::new()?;
     let _ = rl.load_history("/tmp/anos-history.txt");

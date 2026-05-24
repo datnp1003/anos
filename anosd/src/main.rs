@@ -8,6 +8,7 @@ mod memory;
 mod provider;
 mod snapshot;
 mod spawn;
+mod sse;
 mod streaming;
 mod systemmap;
 mod tools;
@@ -86,6 +87,14 @@ async fn main() -> Result<()> {
     // Phase 6: start proactive watcher
     let watcher = Arc::new(Watcher::new(&dir));
     watcher.start().await;
+
+    // Phase 9: optional minimal SSE server
+    let sse_addr = std::env::var("ANOS_SSE_ADDR").unwrap_or_else(|_| "127.0.0.1:8787".into());
+    if std::env::var("ANOS_SSE_DISABLE").unwrap_or_default() != "1" {
+        if let Err(e) = sse::start(sse_addr.clone()).await {
+            tracing::warn!("SSE server disabled: {}", e);
+        }
+    }
 
     let server = IpcServer::new(socket, registry, Arc::new(ctx), dir, watcher);
     tracing::info!("🦾 Ready. Socket: /tmp/anos.sock");

@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.9.0 — 2026-05-24
+
+UX + SSE release.
+
+### Added
+- Minimal SSE server on `ANOS_SSE_ADDR` (default `127.0.0.1:8787`)
+  - `GET /health` returns `OK`
+  - `GET /events` streams `start` + heartbeat events
+- Interactive CLI prints `/version` automatically after connecting.
+- `/versions` alias for `/version`.
+
+### Fixed
+- Unknown slash commands no longer fall through to AI/tool calling.
+- Mistyped commands like `/versionss` now return `Unknown command` + `/help` hint instead of being interpreted as natural language.
+
 ## v0.8.4 — 2026-05-24
 
 Patch: Version command.

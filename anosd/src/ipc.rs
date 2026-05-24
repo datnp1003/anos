@@ -176,13 +176,14 @@ async fn handle_connection(
             "/ping" => {
                 writer.write_all(b"pong\n").await?;
             }
-            "/version" | "/v" => {
+            "/version" | "/v" | "/versions" => {
                 writer
                     .write_all(
                         format!(
-                            "Anos {} | protocol ANO/1.0 | daemon anosd | socket {}\n[END]\n",
+                            "Anos {} | protocol ANO/1.0 | daemon anosd | socket {} | SSE http://{}/events\n[END]\n",
                             env!("CARGO_PKG_VERSION"),
-                            std::env::var("ANOS_SOCKET").unwrap_or_else(|_| "/tmp/anos.sock".into())
+                            std::env::var("ANOS_SOCKET").unwrap_or_else(|_| "/tmp/anos.sock".into()),
+                            std::env::var("ANOS_SSE_ADDR").unwrap_or_else(|_| "127.0.0.1:8787".into())
                         )
                         .as_bytes(),
                     )
@@ -519,10 +520,12 @@ async fn handle_connection(
                 }
             }
             "/stream" => {
-                let mut out = String::from("📡 Streaming scaffold active. Current Unix socket can emit [EVENT:*] frames; SSE/gRPC transport can reuse StreamEvent JSON.\n");
-                out.push_str(
-                    "Supported events: START, DELTA, TOOL_START, TOOL_RESULT, ALERT, ERROR, END\n",
+                let mut out = format!(
+                    "📡 Streaming active. SSE endpoint: http://{}/events\n",
+                    std::env::var("ANOS_SSE_ADDR").unwrap_or_else(|_| "127.0.0.1:8787".into())
                 );
+                out.push_str("Health: /health | Events: /events\n");
+                out.push_str("Supported events: START, DELTA, TOOL_START, TOOL_RESULT, ALERT, ERROR, END, heartbeat\n");
                 writer
                     .write_all(format!("{}[END]\n", out).as_bytes())
                     .await?;
@@ -557,6 +560,17 @@ async fn handle_connection(
                     .write_all(
                         "Commands:\n  /version — show Anos version\n  /model [id] — switch provider\n  /providers — list providers\n  /tools — list tools\n  /auto <goal> — autonomous multi-step task\n  /watch — proactive monitoring\n  /checks — list scheduled checks\n  /alerts — latest watcher alerts\n  /memstatus — Qdrant/fallback memory status\n  /memindex — index memory into Qdrant\n  /memsearch <q> — semantic memory search\n  /stream — streaming scaffold status\n  /memory — show memory\n  /audit — show audit log\n  /spawn <cmd> — spawn sub-agent\n  /agents — list sub-agents\n  /hooks — list hooks\n  /snapshot — list snapshots\n  /upgrade — check for updates\n  /ping — health check\n  /exit — quit\n[END]\n"
                             .as_bytes(),
+                    )
+                    .await?;
+            }
+            _ if msg.starts_with('/') => {
+                writer
+                    .write_all(
+                        format!(
+                            "❌ Unknown command: {}\nTry /help. Did you mean /version?\n[END]\n",
+                            parts[0]
+                        )
+                        .as_bytes(),
                     )
                     .await?;
             }
