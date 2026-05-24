@@ -151,6 +151,7 @@ async fn interactive(sock: &PathBuf) -> Result<()> {
         if t.is_empty() {
             continue;
         }
+        let should_exit = matches!(t, "/exit" | "/quit");
         match t {
             "/help" | "/h" => {
                 let _ = rl.add_history_entry(t);
@@ -176,6 +177,9 @@ async fn interactive(sock: &PathBuf) -> Result<()> {
         }
         if read_response(&mut buf).await.is_err() {
             eprintln!("{}", "Connection lost".red());
+            break;
+        }
+        if should_exit {
             break;
         }
     }

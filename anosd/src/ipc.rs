@@ -194,7 +194,7 @@ async fn handle_connection(
                         Some(&format!("{} messages", session.messages.len())),
                     )
                     .await;
-                writer.write_all(b"Bye!\n").await?;
+                writer.write_all(b"Bye!\n[END]\n").await?;
                 break;
             }
             "/ping" => {

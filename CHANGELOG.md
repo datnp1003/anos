@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.9.2 — 2026-05-24
+
+Exit behavior patch.
+
+### Fixed
+- `/exit` and `/quit` now terminate the interactive CLI immediately after pressing Enter.
+- Daemon now sends `[END]` after `Bye!` so the CLI response reader does not wait for EOF.
+
 ## v0.9.1 — 2026-05-24
 
 Tool-loop UX release.
