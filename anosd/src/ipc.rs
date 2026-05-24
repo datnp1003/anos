@@ -4,9 +4,11 @@ use crate::hooks::{HookEvent, HookRegistry};
 use crate::intent::IntentClassifier;
 use crate::memory::Memory;
 use crate::provider::{ChatCompletionRequest, ChatMessage, ProviderRegistry};
+use crate::snapshot::SnapshotManager;
 use crate::spawn::{AgentRegistry, SpawnConfig};
 use crate::systemmap::SystemMap;
 use crate::tools::{ToolRegistry, ToolSchema};
+use crate::upgrade::SelfUpgrade;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -324,10 +326,46 @@ async fn handle_connection(
                         .await?;
                 }
             }
+            "/snapshot" => {
+                let status = SnapshotManager::status();
+                let snapshots = SnapshotManager::list();
+                let mut out = format!("{}\n", status);
+                for s in &snapshots {
+                    out.push_str(&format!("  📸 {} — {}\n", s.id, s.reason));
+                }
+                writer
+                    .write_all(format!("{}\n[END]\n", out).as_bytes())
+                    .await?;
+            }
+            "/upgrade" => {
+                let upgrader = SelfUpgrade::new(data_dir);
+                writer
+                    .write_all(
+                        format!(
+                            "🔄 Checking for updates...\nCurrent: {}\n",
+                            upgrader.status()
+                        )
+                        .as_bytes(),
+                    )
+                    .await?;
+                if let Some((ver, title)) = SelfUpgrade::check_updates() {
+                    writer
+                        .write_all(
+                            format!(
+                                "Latest: {} — {}\nReply 'yes' to upgrade now.\n[END]\n",
+                                ver, title
+                            )
+                            .as_bytes(),
+                        )
+                        .await?;
+                } else {
+                    writer.write_all(b"No updates available or gh CLI not found.\nTry /upgrade source for source build upgrade.\n[END]\n").await?;
+                }
+            }
             "/help" => {
                 writer
                     .write_all(
-                        "Commands:\n  /model [id] — switch provider\n  /providers — list providers\n  /tools — list tools\n  /memory — show memory\n  /audit — show audit log\n  /spawn <cmd> — spawn sub-agent\n  /agents — list sub-agents\n  /hooks — list hooks\n  /ping — health check\n  /exit — quit\n[END]\n"
+                        "Commands:\n  /model [id] — switch provider\n  /providers — list providers\n  /tools — list tools\n  /memory — show memory\n  /audit — show audit log\n  /spawn <cmd> — spawn sub-agent\n  /agents — list sub-agents\n  /hooks — list hooks\n  /snapshot — list snapshots\n  /upgrade — check for updates\n  /ping — health check\n  /exit — quit\n[END]\n"
                             .as_bytes(),
                     )
                     .await?;
@@ -515,6 +553,30 @@ async fn process_chat(
                             call.function.name,
                             call.function.arguments
                         );
+
+                        // Phase 4: snapshot before dangerous tools
+                        let is_dangerous =
+                            matches!(call.function.name.as_str(), "process" | "package");
+                        if is_dangerous && SnapshotManager::btrfs_available() {
+                            let snap_reason = format!("pre-{}-{}", call.function.name, call.id);
+                            if let Some(snap) = SnapshotManager::create(&snap_reason) {
+                                tracing::info!(
+                                    "Snapshot created before {}: {}",
+                                    call.function.name,
+                                    snap.id
+                                );
+                                writer
+                                    .write_all(
+                                        format!(
+                                            ">> 📸 Snapshot: {} (before {})\n",
+                                            snap.id, call.function.name
+                                        )
+                                        .as_bytes(),
+                                    )
+                                    .await
+                                    .ok();
+                            }
+                        }
 
                         // Phase 3: fire pre-tool hooks
                         if hooks.has_hooks(&HookEvent::PreTool(call.function.name.clone())) {

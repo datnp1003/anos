@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.4.0 — 2026-05-24
+
+Phase 4: Snapshot Safety + Self-Upgrade.
+
+### Added
+- 📸 **Snapshot System** — automatic btrfs snapshots before dangerous tool executions
+  - `SnapshotManager` with create, list, rollback, prune, status
+  - Auto-snapshot before `process` and `package` tool calls
+  - Rollback capability via `rollback(snapshot_id)`
+  - Prune old snapshots to keep disk under control
+  - `/snapshot` command to list current snapshots
+- 🔄 **Self-Upgrade Tool** — Anos can upgrade itself
+  - `/upgrade` — check GitHub releases for updates
+  - Binary upgrade (download pre-built) + source build fallback
+  - Auto-rollback on build failure (git reset)
+  - Version detection from Cargo.toml
+  - `restart_daemon()` to apply upgrades
+  - Works with or without gh CLI (git tag fallback)
+
+### Changed
+- IPC: snapshot auto-created before dangerous tool execution
+- IPC: `/snapshot` + `/upgrade` commands added
+- CLI help updated
+
 ## v0.3.0 — 2026-05-24
 
 Phase 3: Sub-agent Spawn System + Hook System.

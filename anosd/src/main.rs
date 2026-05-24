@@ -5,9 +5,11 @@ mod intent;
 mod ipc;
 mod memory;
 mod provider;
+mod snapshot;
 mod spawn;
 mod systemmap;
 mod tools;
+mod upgrade;
 
 use anyhow::Result;
 use context::PromptContext;
