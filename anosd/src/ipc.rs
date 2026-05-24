@@ -270,7 +270,9 @@ async fn handle_connection(
                     } else if let Ok(n) = arg.parse::<usize>() {
                         session.loop_limit = n.clamp(1, 20);
                     } else {
-                        writer.write_all(b"Usage: /loop [1-20|verbose|quiet]\n[END]\n").await?;
+                        writer
+                            .write_all(b"Usage: /loop [1-20|verbose|quiet]\n[END]\n")
+                            .await?;
                         continue;
                     }
                 }
@@ -746,7 +748,9 @@ async fn continue_loop(
         match result {
             Ok(resp) => {
                 let choice = resp.choices.first();
-                let content = choice.and_then(|c| c.message.content.clone()).unwrap_or_default();
+                let content = choice
+                    .and_then(|c| c.message.content.clone())
+                    .unwrap_or_default();
                 let tool_calls = choice.and_then(|c| c.message.tool_calls.clone());
 
                 if let Some(calls) = tool_calls {
