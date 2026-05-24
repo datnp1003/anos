@@ -33,6 +33,23 @@ REPO="datnp1003/anos"
 
 mkdir -p "$BIN_DIR"
 
+ensure_runtime_assets() {
+    if ! command -v git >/dev/null 2>&1; then
+        echo "⚠️ git not found; runtime assets may be missing (ANOS-SYSTEM-PROMPT.md, skills)."
+        return 0
+    fi
+    if [ -d "$INSTALL_DIR/.git" ]; then
+        cd "$INSTALL_DIR"
+        git fetch origin "$ANOS_BRANCH" >/dev/null 2>&1 || true
+        git checkout "$ANOS_BRANCH" >/dev/null 2>&1 || true
+        git pull --ff-only origin "$ANOS_BRANCH" >/dev/null 2>&1 || true
+    else
+        rm -rf "$INSTALL_DIR"
+        git clone --depth 1 --branch "$ANOS_BRANCH" https://github.com/$REPO.git "$INSTALL_DIR" >/dev/null 2>&1 || true
+    fi
+    mkdir -p "$INSTALL_DIR/config"
+}
+
 install_launcher() {
     cat > "$BIN_DIR/anos" << 'LAUNCHER'
 #!/usr/bin/env bash
@@ -49,8 +66,10 @@ else
     STOP=true
 fi
 if [ "$STOP" = true ]; then
-    "$ANOSD_BIN" &
-    for _ in $(seq 1 30); do [ -S "$SOCK" ] && break; sleep 0.1; done
+    mkdir -p "$ANOS_DIR"
+    LOG="${ANOS_LOG:-$ANOS_DIR/anosd.log}"
+    "$ANOSD_BIN" >>"$LOG" 2>&1 &
+    for _ in $(seq 1 50); do [ -S "$SOCK" ] && break; sleep 0.1; done
 fi
 "$ANOS_CLI_BIN" "$@"
 RC=$?
@@ -103,6 +122,7 @@ try_binary_install() {
         cp -f "$tmp/anosd" "$BIN_DIR/anosd"
         cp -f "$tmp/anos-cli" "$BIN_DIR/anos-cli"
         chmod +x "$BIN_DIR/anosd" "$BIN_DIR/anos-cli"
+        ensure_runtime_assets
         install_launcher
         echo "✅ Installed release binaries."
         return 0

@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.8.3 — 2026-05-24
+
+Patch: installer/runtime asset fix.
+
+### Fixed
+- `anos` launcher now writes daemon logs to `$ANOS_DIR/anosd.log` instead of polluting CLI output.
+- Installer ensures runtime assets exist in `ANOS_DIR` (`ANOS-SYSTEM-PROMPT.md`, `skills/`, `config/`) even when binary assets are installed.
+- Fixes `Error: No such file or directory (os error 2)` when running installed `anos` with a partial `~/.anos` directory.
+
 ## v0.8.2 — 2026-05-24
 
 Patch: OpenClaw API key auto-load fix.
