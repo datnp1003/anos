@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.8.2 — 2026-05-24
+
+Patch: OpenClaw API key auto-load fix.
+
+### Fixed
+- `anosd` now detects 9router provider keys by provider id, `name`, or `baseUrl`.
+- Fixes `401 Unauthorized / Missing API key` on machines where OpenClaw config stores 9router under `models.providers.custom-9router-datnp-com` without a top-level `name` field.
+
 ## v0.8.1 — 2026-05-24
 
 Patch: CLI now prints plain-text daemon responses.

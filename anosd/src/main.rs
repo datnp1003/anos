@@ -32,8 +32,10 @@ fn load_key_from_config() -> Result<String> {
     );
     let cfg: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path)?)?;
     if let Some(ps) = cfg["models"]["providers"].as_object() {
-        for (_, v) in ps {
-            if v["name"].as_str().unwrap_or("").contains("9router") {
+        for (id, v) in ps {
+            let name = v["name"].as_str().unwrap_or("");
+            let base_url = v["baseUrl"].as_str().unwrap_or("");
+            if id.contains("9router") || name.contains("9router") || base_url.contains("9router") {
                 if let Some(k) = v["apiKey"].as_str() {
                     return Ok(k.into());
                 }
