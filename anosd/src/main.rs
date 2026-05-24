@@ -1,3 +1,4 @@
+mod agentic;
 mod audit;
 mod context;
 mod hooks;

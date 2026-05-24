@@ -1,3 +1,4 @@
+use crate::agentic::AgenticEngine;
 use crate::audit::{AuditLevel, AuditLogger, PermissionResult};
 use crate::context::PromptContext;
 use crate::hooks::{HookEvent, HookRegistry};
@@ -362,10 +363,32 @@ async fn handle_connection(
                     writer.write_all(b"No updates available or gh CLI not found.\nTry /upgrade source for source build upgrade.\n[END]\n").await?;
                 }
             }
+            "/auto" => {
+                if parts.len() > 1 {
+                    let goal = parts[1].to_string();
+                    let confirm = goal.starts_with("confirm ");
+                    let real_goal = if confirm {
+                        goal.strip_prefix("confirm ").unwrap_or(&goal).to_string()
+                    } else {
+                        goal.clone()
+                    };
+                    writer.write_all(format!("🤖 Agentic mode: '{}'\n🧠 Planning...\n", real_goal).as_bytes()).await?;
+                    let result = AgenticEngine::run(
+                        &real_goal,
+                        &registry,
+                        &mut session.tools,
+                        confirm,
+                        5,
+                    ).await;
+                    writer.write_all(format!("{}\n[END]\n", result.summary).as_bytes()).await?;
+                } else {
+                    writer.write_all(b"Usage: /auto <goal> -- autonomous multi-step task\n  /auto confirm <goal> -- auto-confirm dangerous steps\n[END]\n").await?;
+                }
+            }
             "/help" => {
                 writer
                     .write_all(
-                        "Commands:\n  /model [id] — switch provider\n  /providers — list providers\n  /tools — list tools\n  /memory — show memory\n  /audit — show audit log\n  /spawn <cmd> — spawn sub-agent\n  /agents — list sub-agents\n  /hooks — list hooks\n  /snapshot — list snapshots\n  /upgrade — check for updates\n  /ping — health check\n  /exit — quit\n[END]\n"
+                        "Commands:\n  /model [id] — switch provider\n  /providers — list providers\n  /tools — list tools\n  /auto <goal> — autonomous multi-step task\n  /memory — show memory\n  /audit — show audit log\n  /spawn <cmd> — spawn sub-agent\n  /agents — list sub-agents\n  /hooks — list hooks\n  /snapshot — list snapshots\n  /upgrade — check for updates\n  /ping — health check\n  /exit — quit\n[END]\n"
                             .as_bytes(),
                     )
                     .await?;

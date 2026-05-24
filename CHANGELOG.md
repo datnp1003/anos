@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.5.0 — 2026-05-24
+
+Phase 5: Agentic Loop — autonomous multi-step task execution.
+
+### Added
+- 🔁 **Agentic Loop** — Anos tự plan + execute + verify multi-step tasks
+  - `/auto <goal>` — đưa goal, LLM tự lên plan, tự chạy từng bước, tự verify
+  - `/auto confirm <goal>` — tự confirm dangerous steps (batch mode)
+  - `AgenticEngine::plan()` — LLM sinh `ExecutionPlan` JSON với steps, tools, success criteria
+  - `AgenticEngine::run()` — execute plan → verify → report
+  - Auto-verify sau install/remove (check package info)
+  - Max 5 steps per task, auto-fallback retry cho confirmation
+- 🤖 `agentic.rs` — 290 line module
+
+### How it works
+```
+User: /auto "cài neovim và check disk"
+  → LLM plans: [1. search neovim, 2. install neovim, 3. disk_usage]
+  → Execute step 1 → ✅ Found
+  → Execute step 2 → ✅ Installed
+  → Verify step 2 → ✅ Confirmed
+  → Execute step 3 → ✅ 65% free
+  → Report: 3/3 steps done in 2.1s
+```
+
+### Changed
+- IPC: `/auto` + `/auto confirm` commands
+- Help updated
+
 ## v0.4.0 — 2026-05-24
 
 Phase 4: Snapshot Safety + Self-Upgrade.
