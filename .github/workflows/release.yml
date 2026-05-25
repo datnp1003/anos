@@ -38,6 +38,8 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.artifact_arch == 'arm64' && 'aarch64-unknown-linux-musl' || 'x86_64-unknown-linux-musl' }}
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -47,20 +49,29 @@ jobs:
             anosd
             anos-cli
 
-      - name: Build anosd
-        working-directory: anosd
-        run: cargo build --release
+      - name: Install musl-dev (static libc)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
 
-      - name: Build anos-cli
+      - name: Build anosd (static musl)
+        working-directory: anosd
+        run: |
+          TARGET="${{ matrix.artifact_arch == 'arm64' && 'aarch64-unknown-linux-musl' || 'x86_64-unknown-linux-musl' }}"
+          cargo build --release --target "$TARGET"
+
+      - name: Build anos-cli (static musl)
         working-directory: anos-cli
-        run: cargo build --release
+        run: |
+          TARGET="${{ matrix.artifact_arch == 'arm64' && 'aarch64-unknown-linux-musl' || 'x86_64-unknown-linux-musl' }}"
+          cargo build --release --target "$TARGET"
 
       - name: Package artifacts
         run: |
           set -euo pipefail
+          TARGET="${{ matrix.artifact_arch == 'arm64' && 'aarch64-unknown-linux-musl' || 'x86_64-unknown-linux-musl' }}"
           mkdir -p dist
-          cp anosd/target/release/anosd "dist/anosd-linux-${{ matrix.artifact_arch }}"
-          cp anos-cli/target/release/anos-cli "dist/anos-cli-linux-${{ matrix.artifact_arch }}"
+          cp anosd/target/$TARGET/release/anosd "dist/anosd-linux-${{ matrix.artifact_arch }}"
+          cp anos-cli/target/$TARGET/release/anos-cli "dist/anos-cli-linux-${{ matrix.artifact_arch }}"
           cp install.sh dist/install.sh
           chmod +x "dist/anosd-linux-${{ matrix.artifact_arch }}" "dist/anos-cli-linux-${{ matrix.artifact_arch }}" dist/install.sh
           sha256sum dist/* > "dist/SHA256SUMS-linux-${{ matrix.artifact_arch }}"
