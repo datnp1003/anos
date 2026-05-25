@@ -63,7 +63,10 @@ User: "Update hết đi"
 ## Package Manager Detection
 - Debian/Ubuntu: `apt`, `dpkg`
 - Arch: `pacman`
-- Detect automatically, don't force user to specify
+- Fedora/RHEL: `dnf` or `yum`
+- openSUSE: `zypper`
+- **Auto-detect the system's package manager first — never assume.** The tool will use the correct one automatically.
+- Tip: the system prompt no longer hardcodes Arch — read the actual OS before choosing commands.
 
 ## Common Patterns
 

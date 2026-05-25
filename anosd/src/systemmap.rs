@@ -258,29 +258,44 @@ impl SystemMap {
     }
 
     fn pkg_count() -> usize {
-        Command::new("dpkg")
-            .args(["--list"])
-            .output()
-            .map(|o| {
-                String::from_utf8_lossy(&o.stdout)
-                    .lines()
-                    .filter(|l| l.starts_with("ii"))
-                    .count()
-            })
-            .unwrap_or(0)
+        // Try dpkg (Debian/Ubuntu)
+        if let Ok(o) = Command::new("dpkg").args(["--list"]).output() {
+            return String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .filter(|l| l.starts_with("ii"))
+                .count();
+        }
+        // Try pacman (Arch)
+        if let Ok(o) = Command::new("pacman").args(["-Q"]).output() {
+            return String::from_utf8_lossy(&o.stdout).lines().count();
+        }
+        // Try rpm (Fedora/RHEL)
+        if let Ok(o) = Command::new("rpm").args(["-qa"]).output() {
+            return String::from_utf8_lossy(&o.stdout).lines().count();
+        }
+        0
     }
 
     fn upgradable_count() -> usize {
-        Command::new("apt")
-            .args(["list", "--upgradable"])
-            .output()
-            .map(|o| {
-                String::from_utf8_lossy(&o.stdout)
-                    .lines()
-                    .filter(|l| !l.starts_with("Listing") && !l.is_empty())
-                    .count()
-            })
-            .unwrap_or(0)
+        // Try apt (Debian/Ubuntu)
+        if let Ok(o) = Command::new("apt").args(["list", "--upgradable"]).output() {
+            let out = String::from_utf8_lossy(&o.stdout);
+            if !out.contains("command not found") && !out.contains("No such file") {
+                return out.lines().filter(|l| !l.starts_with("Listing") && !l.is_empty()).count();
+            }
+        }
+        // Try pacman (Arch)
+        if let Ok(o) = Command::new("checkupdates").output() {
+            return String::from_utf8_lossy(&o.stdout).lines().count();
+        }
+        // Try dnf (Fedora)
+        if let Ok(o) = Command::new("dnf").args(["check-update", "-q"]).output() {
+            let out = String::from_utf8_lossy(&o.stdout);
+            if !out.contains("command not found") {
+                return out.lines().filter(|l| !l.is_empty()).count();
+            }
+        }
+        0
     }
 
     fn svc_count() -> usize {

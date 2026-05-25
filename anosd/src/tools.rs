@@ -41,17 +41,44 @@ pub fn run_cmd(cmd: &str, args: &[&str]) -> (i32, String) {
         Ok(o) => {
             let out = String::from_utf8_lossy(&o.stdout).to_string();
             let err = String::from_utf8_lossy(&o.stderr).to_string();
+            if o.status.code().is_none() {
+                // Killed by signal
+                return (-1, err);
+            }
             (
                 o.status.code().unwrap_or(-1),
                 if out.is_empty() { err } else { out },
             )
         }
-        Err(e) => (-1, e.to_string()),
+        Err(e) => {
+            // Graceful message for "command not found" (os error 2)
+            if e.raw_os_error() == Some(2) {
+                (-1, format!("⚠️ {}: command not found on this system. Try: sudo apt install {}", cmd, cmd))
+            } else {
+                (-1, e.to_string())
+            }
+        }
     }
 }
 
 // ── Package ──
 pub struct PackageTool;
+
+fn detect_pkg_manager() -> &'static str {
+    // Ordered by detection priority
+    for (cmd, _) in &[
+        ("apt", "dpkg"),         // Debian/Ubuntu
+        ("pacman", "pacman"),     // Arch
+        ("dnf", "rpm"),           // Fedora/RHEL 8+
+        ("yum", "rpm"),           // RHEL 7/CentOS 7
+        ("zypper", "rpm"),        // openSUSE
+    ] {
+        if Command::new("which").arg(cmd).output().map(|o| o.status.success()).unwrap_or(false) {
+            return cmd;
+        }
+    }
+    "apt" // fallback — will fail gracefully if not found
+}
 impl PackageTool {
     pub fn new() -> Self {
         Self
@@ -76,11 +103,17 @@ impl SystemTool for PackageTool {
         }
     }
     async fn execute(&self, params: &serde_json::Value, confirm: bool) -> ToolResult {
+        let pm = detect_pkg_manager();
         let action = params["action"].as_str().unwrap_or("list");
         let pkg = params["package"].as_str().unwrap_or("");
         match action {
             "search" => {
-                let (_, o) = run_cmd("apt", &["search", pkg]);
+                let (_, o) = match pm {
+                    "pacman" => run_cmd("pacman", &["-Ss", pkg]),
+                    "dnf" | "yum" => run_cmd(pm, &["search", pkg]),
+                    "zypper" => run_cmd("zypper", &["search", pkg]),
+                    _ => run_cmd("apt", &["search", pkg]),
+                };
                 ToolResult {
                     success: true,
                     output: o.lines().take(15).collect::<Vec<_>>().join("\n"),
@@ -88,7 +121,11 @@ impl SystemTool for PackageTool {
                 }
             }
             "info" => {
-                let (c, o) = run_cmd("dpkg", &["-s", pkg]);
+                let (c, o) = match pm {
+                    "pacman" => run_cmd("pacman", &["-Qi", pkg]),
+                    "dnf" | "yum" => run_cmd("rpm", &["-qi", pkg]),
+                    _ => run_cmd("dpkg", &["-s", pkg]),
+                };
                 ToolResult {
                     success: c == 0,
                     output: o,
@@ -100,7 +137,13 @@ impl SystemTool for PackageTool {
                 }
             }
             "list_upgradable" => {
-                let (_, o) = run_cmd("apt", &["list", "--upgradable"]);
+                let (_, o) = match pm {
+                    "pacman" => run_cmd("checkupdates", &[]),
+                    "dnf" => run_cmd("dnf", &["check-update", "-q"]),
+                    "yum" => run_cmd("yum", &["check-update", "-q"]),
+                    "zypper" => run_cmd("zypper", &["list-updates"]),
+                    _ => run_cmd("apt", &["list", "--upgradable"]),
+                };
                 let n = o.lines().filter(|l| !l.starts_with("Listing")).count();
                 ToolResult {
                     success: true,
@@ -114,7 +157,13 @@ impl SystemTool for PackageTool {
                 error: Some("Package name required".into()),
             },
             "install" if confirm => {
-                let (c, o) = run_cmd("apt", &["install", "-y", "-qq", pkg]);
+                let (c, o) = match pm {
+                    "pacman" => run_cmd("pacman", &["-S", "--noconfirm", pkg]),
+                    "dnf" => run_cmd("dnf", &["install", "-y", "-q", pkg]),
+                    "yum" => run_cmd("yum", &["install", "-y", "-q", pkg]),
+                    "zypper" => run_cmd("zypper", &["install", "-y", pkg]),
+                    _ => run_cmd("apt", &["install", "-y", "-qq", pkg]),
+                };
                 ToolResult {
                     success: c == 0,
                     output: if c == 0 {
@@ -126,7 +175,13 @@ impl SystemTool for PackageTool {
                 }
             }
             "remove" if confirm => {
-                let (c, o) = run_cmd("apt", &["remove", "-y", "-qq", pkg]);
+                let (c, o) = match pm {
+                    "pacman" => run_cmd("pacman", &["-R", "--noconfirm", pkg]),
+                    "dnf" => run_cmd("dnf", &["remove", "-y", "-q", pkg]),
+                    "yum" => run_cmd("yum", &["remove", "-y", "-q", pkg]),
+                    "zypper" => run_cmd("zypper", &["remove", "-y", pkg]),
+                    _ => run_cmd("apt", &["remove", "-y", "-qq", pkg]),
+                };
                 ToolResult {
                     success: c == 0,
                     output: if c == 0 {
