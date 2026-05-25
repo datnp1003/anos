@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.10.2 — 2026-05-25
+
+Cross-distribution package manager fix.
+
+### Fixed
+- System prompt no longer hardcodes "Arch Linux (fork)" — auto-detects distribution.
+- Package tool (`tools.rs`) now auto-detects package manager: `apt`, `pacman`, `dnf`, `yum`, `zypper`.
+- `systemmap.rs` `pkg_count()` and `upgradable_count()` gracefully fallback across multiple package managers instead of crashing with "no such file" on non-Debian systems.
+- `run_cmd()` returns a friendly message when the underlying command is not found on the system.
+- Package management skill (`skills/package/SKILL.md`) emphasizes auto-detection and covers all major distros.
+
 ## v0.10.1 — 2026-05-24
 
 Stable installer preservation release.
