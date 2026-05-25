@@ -24,8 +24,10 @@ jobs:
         include:
           - runner: ubuntu-24.04-arm
             artifact_arch: arm64
+            target: aarch64-unknown-linux-musl
           - runner: ubuntu-latest
             artifact_arch: x86_64
+            target: x86_64-unknown-linux-musl
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -39,7 +41,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.artifact_arch == 'arm64' && 'aarch64-unknown-linux-musl' || 'x86_64-unknown-linux-musl' }}
+          targets: ${{ matrix.target }}
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -55,23 +57,18 @@ jobs:
 
       - name: Build anosd (static musl)
         working-directory: anosd
-        run: |
-          TARGET="${{ matrix.artifact_arch == 'arm64' && 'aarch64-unknown-linux-musl' || 'x86_64-unknown-linux-musl' }}"
-          cargo build --release --target "$TARGET"
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Build anos-cli (static musl)
         working-directory: anos-cli
-        run: |
-          TARGET="${{ matrix.artifact_arch == 'arm64' && 'aarch64-unknown-linux-musl' || 'x86_64-unknown-linux-musl' }}"
-          cargo build --release --target "$TARGET"
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package artifacts
         run: |
           set -euo pipefail
-          TARGET="${{ matrix.artifact_arch == 'arm64' && 'aarch64-unknown-linux-musl' || 'x86_64-unknown-linux-musl' }}"
           mkdir -p dist
-          cp anosd/target/$TARGET/release/anosd "dist/anosd-linux-${{ matrix.artifact_arch }}"
-          cp anos-cli/target/$TARGET/release/anos-cli "dist/anos-cli-linux-${{ matrix.artifact_arch }}"
+          cp anosd/target/${{ matrix.target }}/release/anosd "dist/anosd-linux-${{ matrix.artifact_arch }}"
+          cp anos-cli/target/${{ matrix.target }}/release/anos-cli "dist/anos-cli-linux-${{ matrix.artifact_arch }}"
           cp install.sh dist/install.sh
           chmod +x "dist/anosd-linux-${{ matrix.artifact_arch }}" "dist/anos-cli-linux-${{ matrix.artifact_arch }}" dist/install.sh
           sha256sum dist/* > "dist/SHA256SUMS-linux-${{ matrix.artifact_arch }}"
