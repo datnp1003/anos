@@ -14,3 +14,12 @@ watcher-alerts.jsonl
 memory.jsonl
 subagents.jsonl
 hooks.yaml
+output/
+output/
+docker/anosd
+docker/anos-cli
+docker/ANOS-SYSTEM-PROMPT.md
+docker/skills/
+docker/install.sh
+docker/anos-init
+docker/config/
