@@ -107,8 +107,19 @@ SOCK="/tmp/anos.sock"
 export ANOS_DIR
 
 STOP=false
+socket_alive() {
+    # Try nc first, fallback to direct /ping via pipe
+    if command -v nc >/dev/null 2>&1; then
+        echo "/ping" | nc -U -w 1 "$SOCK" 2>/dev/null | grep -q pong && return 0
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 -c "import socket; s=socket.socket(socket.AF_UNIX); s.settimeout(1); s.connect('$SOCK'); s.send(b'/ping\n'); print(s.recv(1024).decode())" 2>/dev/null | grep -q pong && return 0
+    elif command -v socat >/dev/null 2>&1; then
+        echo "/ping" | socat - UNIX-CONNECT:"$SOCK",connect-timeout=1 2>/dev/null | grep -q pong && return 0
+    fi
+    return 1
+}
 if [ -S "$SOCK" ]; then
-    echo "/ping" | nc -U -w 1 "$SOCK" 2>/dev/null | grep -q pong || { rm -f "$SOCK"; STOP=true; }
+    socket_alive || { rm -f "$SOCK"; STOP=true; }
 else
     STOP=true
 fi

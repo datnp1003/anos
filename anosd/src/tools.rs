@@ -64,20 +64,32 @@ pub fn run_cmd(cmd: &str, args: &[&str]) -> (i32, String) {
 // ── Package ──
 pub struct PackageTool;
 
-fn detect_pkg_manager() -> &'static str {
-    // Ordered by detection priority
-    for (cmd, _) in &[
-        ("apt", "dpkg"),         // Debian/Ubuntu
-        ("pacman", "pacman"),     // Arch
-        ("dnf", "rpm"),           // Fedora/RHEL 8+
-        ("yum", "rpm"),           // RHEL 7/CentOS 7
-        ("zypper", "rpm"),        // openSUSE
+pub fn detect_pkg_manager() -> &'static str {
+    // Detect by trying to run each manager with --version
+    // Avoids 'which' dependency (missing on minimal/sublinux systems)
+    for (cmd, args) in &[
+        // Debian/Ubuntu — try apt-get first (more reliably installed)
+        ("apt-get", &["--version"][..]),
+        ("apt", &["--version"][..]),
+        // Arch
+        ("pacman", &["--version"][..]),
+        // Fedora/RHEL 8+
+        ("dnf", &["--version"][..]),
+        // RHEL 7/CentOS 7
+        ("yum", &["--version"][..]),
+        // openSUSE
+        ("zypper", &["--version"][..]),
     ] {
-        if Command::new("which").arg(cmd).output().map(|o| o.status.success()).unwrap_or(false) {
-            return cmd;
+        if let Ok(o) = Command::new(cmd).args(*args).output() {
+            if o.status.success() {
+                match *cmd {
+                    "apt-get" => return "apt",
+                    other => return other,
+                }
+            }
         }
     }
-    "apt" // fallback — will fail gracefully if not found
+    "apt" // fallback — will fail gracefully via run_cmd
 }
 impl PackageTool {
     pub fn new() -> Self {

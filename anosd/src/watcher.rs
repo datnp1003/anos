@@ -6,6 +6,7 @@
 //! - `/alerts` exposes latest alerts
 
 use crate::streaming::{StreamEvent, StreamEventKind};
+use crate::tools::detect_pkg_manager;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Write;
@@ -468,31 +469,54 @@ fn check_ram(check: &WatchCheck) -> CheckResult {
 }
 
 fn check_updates(check: &WatchCheck) -> CheckResult {
-    if let Ok(out) = Command::new("apt").args(["list", "--upgradable"]).output() {
-        let text = String::from_utf8_lossy(&out.stdout);
-        let count = text
-            .lines()
-            .filter(|l| !l.starts_with("Listing") && !l.is_empty())
-            .count();
-        let sec = text.lines().filter(|l| l.contains("-security")).count();
-        return CheckResult {
-            check_id: check.id.clone(),
-            value: format!("{} total, {} security", count, sec),
-            numeric_value: Some(count as f64),
-            exceeded_threshold: sec > 0,
-            message: if sec > 0 {
-                format!("{} security updates available", sec)
+    let pm = detect_pkg_manager();
+    let (count, sec): (usize, usize) = match pm {
+        "pacman" => {
+            if let Ok(out) = Command::new("checkupdates").output() {
+                let cnt = String::from_utf8_lossy(&out.stdout).lines().count();
+                (cnt, 0)
             } else {
-                format!("{} updates (0 security) — OK", count)
-            },
-        };
-    }
+                (0, 0)
+            }
+        }
+        "dnf" | "yum" => {
+            if let Ok(out) = Command::new(pm).args(["check-update", "-q"]).output() {
+                let cnt = String::from_utf8_lossy(&out.stdout).lines().filter(|l| !l.is_empty()).count();
+                (cnt, cnt)
+            } else {
+                (0, 0)
+            }
+        }
+        "zypper" => {
+            if let Ok(out) = Command::new("zypper").args(["list-updates"]).output() {
+                let cnt = String::from_utf8_lossy(&out.stdout).lines().count();
+                (cnt, cnt)
+            } else {
+                (0, 0)
+            }
+        }
+        _ => {
+            // apt (default / fallback)
+            if let Ok(out) = Command::new("apt").args(["list", "--upgradable"]).output() {
+                let text = String::from_utf8_lossy(&out.stdout);
+                let cnt = text.lines().filter(|l| !l.starts_with("Listing") && !l.is_empty()).count();
+                let s = text.lines().filter(|l| l.contains("-security")).count();
+                (cnt, s)
+            } else {
+                (0, 0)
+            }
+        }
+    };
     CheckResult {
         check_id: check.id.clone(),
-        value: "N/A".into(),
-        numeric_value: None,
-        exceeded_threshold: false,
-        message: "Could not check updates".into(),
+        value: format!("{} total, {} security", count, sec),
+        numeric_value: Some(count as f64),
+        exceeded_threshold: sec > 0,
+        message: if sec > 0 {
+            format!("{} security updates available", sec)
+        } else {
+            format!("{} updates (0 security) — OK", count)
+        },
     }
 }
 
