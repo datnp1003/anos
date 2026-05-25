@@ -1,0 +1,132 @@
+name: Build AnosOS ISO
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag, e.g. v0.10.2'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-iso:
+    name: Build AnosOS ISO (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+            grub-pkg: grub-pc-bin
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            grub-pkg: grub-efi-arm64-bin
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.arch }}-iso
+          workspaces: |
+            anosd
+            anos-cli
+
+      - name: Build anosd
+        working-directory: anosd
+        run: cargo build --release
+
+      - name: Build anos-cli
+        working-directory: anos-cli
+        run: cargo build --release
+
+      - name: Install ISO tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            genisoimage mtools squashfs-tools dosfstools cpio \
+            linux-image-generic \
+            busybox udhcpc \
+            ${{ matrix.grub-pkg }}
+
+      - name: Build rootfs + ISO
+        run: |
+          set -euo pipefail
+          WORK="/tmp/anos-os-build"
+          rm -rf "$WORK"
+          mkdir -p "$WORK"/{bin,boot,sbin,etc,dev,proc,sys,tmp,usr/bin,opt/anos/{config,skills}}
+
+          # Copy Anos binaries
+          cp anosd/target/release/anosd "$WORK/usr/bin/"
+          cp anos-cli/target/release/anos-cli "$WORK/usr/bin/"
+          cp ANOS-SYSTEM-PROMPT.md "$WORK/opt/anos/"
+          cp -r skills/* "$WORK/opt/anos/skills/"
+          cp -r config "$WORK/opt/anos/" 2>/dev/null || true
+          cp anos-init "$WORK/sbin/init"
+          chmod +x "$WORK/sbin/init" "$WORK/usr/bin/anosd" "$WORK/usr/bin/anos-cli"
+
+          # Busybox
+          cp /usr/lib/busybox/bin/busybox "$WORK/bin/" 2>/dev/null || cp /bin/busybox "$WORK/bin/"
+          for u in sh ls cat echo mount umount ip ping modprobe mknod sleep grep mkdir ln rm mv cp; do
+              ln -sf /bin/busybox "$WORK/bin/$u"
+          done
+          cp /usr/sbin/udhcpc "$WORK/sbin/" 2>/dev/null || true
+
+          # Kernel
+          KERNEL=$(ls /boot/vmlinuz-* 2>/dev/null | head -1)
+          cp "$KERNEL" "$WORK/boot/vmlinuz"
+          echo "Kernel: $(basename $KERNEL)"
+
+          # Initrd
+          echo "📦 Building initrd..."
+          (cd "$WORK" && find . -path ./boot -prune -o -print | cpio -o -H newc 2>/dev/null) | gzip > "$WORK/boot/initrd.img"
+          echo "   Initrd: $(du -h $WORK/boot/initrd.img | cut -f1)"
+
+          # GRUB
+          mkdir -p "$WORK/boot/grub"
+          cat > "$WORK/boot/grub/grub.cfg" << 'GRUB_END'
+      set timeout=5
+      menuentry "🦾 AnosOS — AI Native OS" {
+          linux /boot/vmlinuz console=tty1 quiet
+          initrd /boot/initrd.img
+      }
+      menuentry "AnosOS — Verbose" {
+          linux /boot/vmlinuz console=tty1
+          initrd /boot/initrd.img
+      }
+      GRUB_END
+
+          # ISO
+          ISO="anos-os-${{ github.ref_name }}-${{ matrix.arch }}.iso"
+          echo "💿 Building $ISO..."
+          genisoimage -R -r -J -V "ANOS_OS" -o "$ISO" -b boot/grub/grub.cfg -no-emul-boot "$WORK"
+
+          ls -lh "$ISO"
+          echo "iso_path=$ISO" >> "$GITHUB_ENV"
+          echo "iso_name=$ISO" >> "$GITHUB_ENV"
+
+      - name: Upload ISO to Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ inputs.tag || github.ref_name }}" "${{ env.iso_path }}" --clobber
+
+      - name: Summary
+        run: |
+          echo "## 🦾 AnosOS ISO Built" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Arch | ISO | Size |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-----|------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ${{ matrix.arch }} | ${{ env.iso_name }} | $(du -h ${{ env.iso_path }} | cut -f1) |" >> "$GITHUB_STEP_SUMMARY"

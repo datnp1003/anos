@@ -71,6 +71,8 @@ pub fn detect_pkg_manager() -> &'static str {
         // Debian/Ubuntu — try apt-get first (more reliably installed)
         ("apt-get", &["--version"][..]),
         ("apt", &["--version"][..]),
+        // Alpine
+        ("apk", &["--version"][..]),
         // Arch
         ("pacman", &["--version"][..]),
         // Fedora/RHEL 8+
@@ -121,6 +123,7 @@ impl SystemTool for PackageTool {
         match action {
             "search" => {
                 let (_, o) = match pm {
+                    "apk" => run_cmd("apk", &["search", pkg]),
                     "pacman" => run_cmd("pacman", &["-Ss", pkg]),
                     "dnf" | "yum" => run_cmd(pm, &["search", pkg]),
                     "zypper" => run_cmd("zypper", &["search", pkg]),
@@ -134,6 +137,7 @@ impl SystemTool for PackageTool {
             }
             "info" => {
                 let (c, o) = match pm {
+                    "apk" => run_cmd("apk", &["info", "-a", pkg]),
                     "pacman" => run_cmd("pacman", &["-Qi", pkg]),
                     "dnf" | "yum" => run_cmd("rpm", &["-qi", pkg]),
                     _ => run_cmd("dpkg", &["-s", pkg]),
@@ -150,6 +154,7 @@ impl SystemTool for PackageTool {
             }
             "list_upgradable" => {
                 let (_, o) = match pm {
+                    "apk" => run_cmd("apk", &["list", "-u"]),
                     "pacman" => run_cmd("checkupdates", &[]),
                     "dnf" => run_cmd("dnf", &["check-update", "-q"]),
                     "yum" => run_cmd("yum", &["check-update", "-q"]),
@@ -170,6 +175,7 @@ impl SystemTool for PackageTool {
             },
             "install" if confirm => {
                 let (c, o) = match pm {
+                    "apk" => run_cmd("apk", &["add", pkg]),
                     "pacman" => run_cmd("pacman", &["-S", "--noconfirm", pkg]),
                     "dnf" => run_cmd("dnf", &["install", "-y", "-q", pkg]),
                     "yum" => run_cmd("yum", &["install", "-y", "-q", pkg]),
@@ -188,6 +194,7 @@ impl SystemTool for PackageTool {
             }
             "remove" if confirm => {
                 let (c, o) = match pm {
+                    "apk" => run_cmd("apk", &["del", pkg]),
                     "pacman" => run_cmd("pacman", &["-R", "--noconfirm", pkg]),
                     "dnf" => run_cmd("dnf", &["remove", "-y", "-q", pkg]),
                     "yum" => run_cmd("yum", &["remove", "-y", "-q", pkg]),
