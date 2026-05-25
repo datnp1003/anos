@@ -122,7 +122,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ inputs.tag || github.ref_name }}" "${{ env.iso_path }}" --clobber
+          TAG="${{ inputs.tag || github.ref_name }}"
+          gh release view "$TAG" &>/dev/null || gh release create "$TAG" --title "$TAG" --notes "AnosOS ISO auto-built by CI"
+          gh release upload "$TAG" "${{ env.iso_path }}" --clobber
 
       - name: Summary
         run: |
