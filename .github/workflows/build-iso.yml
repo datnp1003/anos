@@ -1,4 +1,4 @@
-name: Build AnosOS ISO
+name: Build AnosOS ISO (x86_64)
 
 on:
   push:
@@ -15,7 +15,6 @@ permissions:
 
 jobs:
   build-iso:
-    name: Build AnosOS ISO
     runs-on: ubuntu-latest
 
     steps:
@@ -32,17 +31,16 @@ jobs:
         with:
           workspaces: anosd, anos-cli
 
-      - name: Build anosd
-        run: cd anosd && cargo build --release
-
-      - name: Build anos-cli
-        run: cd anos-cli && cargo build --release
+      - name: Build anosd + anos-cli
+        run: |
+          cd anosd && cargo build --release
+          cd ../anos-cli && cargo build --release
 
       - name: Install ISO tools
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
-            genisoimage mtools squashfs-tools cpio \
+            genisoimage squashfs-tools cpio \
             linux-image-generic busybox-static udhcpc
 
       - name: Build rootfs + ISO
@@ -50,7 +48,7 @@ jobs:
           set -euo pipefail
           WORK="/tmp/anos-os-build"
           rm -rf "$WORK"
-          mkdir -p "$WORK"/{bin,boot,sbin,etc,dev,proc,sys,tmp,usr/bin,opt/anos/{config,skills}}
+          mkdir -p "$WORK"/{bin,boot,sbin,etc,dev,proc,sys,tmp,usr/bin,opt/anos/skills}
 
           cp anosd/target/release/anosd "$WORK/usr/bin/"
           cp anos-cli/target/release/anos-cli "$WORK/usr/bin/"
@@ -59,7 +57,7 @@ jobs:
           cp anos-init "$WORK/sbin/init"
           chmod +x "$WORK/sbin/init" "$WORK/usr/bin/anosd" "$WORK/usr/bin/anos-cli"
 
-          # Busybox (static binary)
+          # Busybox
           cp /bin/busybox "$WORK/bin/" 2>/dev/null || true
           for u in sh ls cat echo mount umount ip ping modprobe mknod sleep grep mkdir ln rm mv cp; do
               ln -sf /bin/busybox "$WORK/bin/$u" 2>/dev/null || true
@@ -69,11 +67,11 @@ jobs:
           # Kernel
           KERNEL=$(ls /boot/vmlinuz-* 2>/dev/null | head -1)
           cp "$KERNEL" "$WORK/boot/vmlinuz"
+          echo "Kernel: $(basename $KERNEL)"
 
           # Initrd
           echo "📦 Building initrd..."
           (cd "$WORK" && find . -path ./boot -prune -o -print | cpio -o -H newc 2>/dev/null) | gzip > "$WORK/boot/initrd.img"
-          echo "   Initrd: $(du -h $WORK/boot/initrd.img | cut -f1)"
 
           # GRUB
           mkdir -p "$WORK/boot/grub"
@@ -91,11 +89,10 @@ jobs:
           genisoimage -R -r -J -V "ANOS_OS" -o "$ISO" -b boot/grub/grub.cfg -no-emul-boot "$WORK"
           ls -lh "$ISO"
           echo "iso_path=$ISO" >> "$GITHUB_ENV"
-          echo "iso_name=$ISO" >> "$GITHUB_ENV"
 
       - name: Upload ISO to Release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: *** github.token }}
         run: |
           TAG="${{ inputs.tag || github.ref_name }}"
           gh release view "$TAG" &>/dev/null || gh release create "$TAG" --title "$TAG" --notes "AnosOS ISO auto-built by CI"
@@ -103,7 +100,8 @@ jobs:
 
       - name: Summary
         run: |
-          echo "## 🦾 AnosOS ISO Built" >> "$GITHUB_STEP_SUMMARY"
+          SIZE=$(du -h "${{ env.iso_path }}" | cut -f1)
+          echo "## 🦾 AnosOS x86_64 ISO Ready" >> "$GITHUB_STEP_SUMMARY"
           echo "| ISO | Size |" >> "$GITHUB_STEP_SUMMARY"
           echo "|-----|------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| ${{ env.iso_name }} | $(du -h ${{ env.iso_path }} | cut -f1) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ${{ env.iso_path }} | $SIZE |" >> "$GITHUB_STEP_SUMMARY"
