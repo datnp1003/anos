@@ -1678,21 +1678,6 @@ impl SystemTool for FirewallTool {
                     };
                 }
                 if has_ufw {
-                    let proto_arg = if proto == "both" { "" } else { proto };
-                    let mut args = vec!["allow"];
-                    if !proto_arg.is_empty() {
-                        args.push("proto");
-                        args.push(proto_arg);
-                        args.push("to");
-                        args.push("any");
-                        args.push("port");
-                    }
-                    let port_str = port.to_string();
-                    if proto_arg.is_empty() {
-                        args.push(&port_str);
-                    } else {
-                        args.push(&port_str);
-                    }
                     let cmd_str = if proto == "both" {
                         format!("ufw allow {}", port)
                     } else {
@@ -1810,18 +1795,7 @@ impl SystemTool for FirewallTool {
                     other => other,
                 };
                 if has_ufw {
-                    let cmd = if svc == "ssh"
-                        || svc == "http"
-                        || svc == "https"
-                        || svc == "mysql"
-                        || svc == "postgresql"
-                        || svc == "redis"
-                        || svc == "mongodb"
-                    {
-                        format!("ufw allow {}", svc)
-                    } else {
-                        format!("ufw allow {}", svc)
-                    };
+                    let cmd = format!("ufw allow {}", svc);
                     let (c, out) = run_cmd("bash", &["-c", &cmd]);
                     ToolResult {
                         success: c == 0,
