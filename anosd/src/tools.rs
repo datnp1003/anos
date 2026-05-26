@@ -1589,6 +1589,442 @@ impl SystemTool for WebServerTool {
     }
 }
 
+// ── Firewall ──
+pub struct FirewallTool;
+impl FirewallTool {
+    pub fn new() -> Self {
+        Self
+    }
+}
+#[async_trait]
+impl SystemTool for FirewallTool {
+    fn name(&self) -> &str {
+        "firewall"
+    }
+    fn description(&self) -> &str {
+        "Manage firewall: status, enable, disable, list_rules, allow_port, deny_port, allow_service, delete_rule (ufw + iptables)"
+    }
+    fn permission(&self) -> Permission {
+        Permission::Confirm
+    }
+    fn schema(&self) -> ToolSchema {
+        ToolSchema {
+            name: "firewall".into(),
+            description: self.description().into(),
+            parameters: serde_json::json!({"type":"object","properties":{"action":{"type":"string","enum":["status","enable","disable","list_rules","allow_port","deny_port","allow_service","delete_rule"]},"port":{"type":"integer"},"protocol":{"type":"string","enum":["tcp","udp","both"],"default":"tcp"},"service":{"type":"string"},"rule_num":{"type":"integer"}},"required":["action"]}),
+        }
+    }
+    async fn execute(&self, params: &serde_json::Value, confirm: bool) -> ToolResult {
+        let action = params["action"].as_str().unwrap_or("status");
+        // Detect firewall: prefer ufw, fallback to iptables
+        let has_ufw = run_cmd("ufw", &["--version"]).0 == 0;
+        match action {
+            "status" => {
+                if has_ufw {
+                    let (_, out) = run_cmd("ufw", &["status", "verbose"]);
+                    ToolResult { success: true, output: out, error: None }
+                } else {
+                    let (_, out) = run_cmd("iptables", &["-L", "-n", "-v"]);
+                    ToolResult {
+                        success: true,
+                        output: format!("⚠️ ufw not installed (showing raw iptables)\n\n{}",
+                            out.lines().take(40).collect::<Vec<_>>().join("\n")),
+                        error: None,
+                    }
+                }
+            }
+            "list_rules" => {
+                if has_ufw {
+                    let (_, out) = run_cmd("ufw", &["status", "numbered"]);
+                    ToolResult { success: true, output: out, error: None }
+                } else {
+                    let (_, out) = run_cmd("iptables", &["-L", "-n", "--line-numbers"]);
+                    ToolResult {
+                        success: true,
+                        output: out.lines().take(30).collect::<Vec<_>>().join("\n"),
+                        error: None,
+                    }
+                }
+            }
+            "enable" if confirm => {
+                if has_ufw {
+                    let (c, out) = run_cmd("ufw", &["--force", "enable"]);
+                    ToolResult {
+                        success: c == 0,
+                        output: if c == 0 { "✅ Firewall enabled".into() } else { out.clone() },
+                        error: if c != 0 { Some(out) } else { None },
+                    }
+                } else {
+                    ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("ufw not installed. Try: apt install ufw".into()),
+                    }
+                }
+            }
+            "disable" if confirm => {
+                if has_ufw {
+                    let (c, out) = run_cmd("ufw", &["disable"]);
+                    ToolResult {
+                        success: c == 0,
+                        output: if c == 0 { "✅ Firewall disabled".into() } else { out.clone() },
+                        error: if c != 0 { Some(out) } else { None },
+                    }
+                } else {
+                    ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("ufw not installed. Try: apt install ufw".into()),
+                    }
+                }
+            }
+            "allow_port" if confirm => {
+                let port = params["port"].as_u64().unwrap_or(0);
+                let proto = params["protocol"].as_str().unwrap_or("tcp");
+                if port == 0 || port > 65535 {
+                    return ToolResult {
+                        success: false, output: String::new(),
+                        error: Some("Invalid port (1-65535)".into()),
+                    };
+                }
+                if has_ufw {
+                    let proto_arg = if proto == "both" { "" } else { proto };
+                    let mut args = vec!["allow"];
+                    if !proto_arg.is_empty() {
+                        args.push("proto");
+                        args.push(proto_arg);
+                        args.push("to");
+                        args.push("any");
+                        args.push("port");
+                    }
+                    let port_str = port.to_string();
+                    if proto_arg.is_empty() {
+                        args.push(&port_str);
+                    } else {
+                        args.push(&port_str);
+                    }
+                    let cmd_str = if proto == "both" {
+                        format!("ufw allow {}", port)
+                    } else {
+                        format!("ufw allow proto {} to any port {}", proto, port)
+                    };
+                    let (c, out) = run_cmd("bash", &["-c", &cmd_str]);
+                    ToolResult {
+                        success: c == 0,
+                        output: if c == 0 { format!("✅ Allowed port {}/{}", port, proto) } else { out.clone() },
+                        error: if c != 0 { Some(out) } else { None },
+                    }
+                } else {
+                    let proto_flag = if proto == "both" { "" } else { proto };
+                    let port_str = port.to_string();
+                    let mut args = vec!["-A", "INPUT", "-p"];
+                    if proto_flag.is_empty() {
+                        // Both TCP+UDP: two rules
+                        let (c1, _o1) = run_cmd("iptables", &["-A", "INPUT", "-p", "tcp", "--dport", &port_str, "-j", "ACCEPT"]);
+                        let (c2, _o2) = run_cmd("iptables", &["-A", "INPUT", "-p", "udp", "--dport", &port_str, "-j", "ACCEPT"]);
+                        ToolResult {
+                            success: c1 == 0 && c2 == 0,
+                            output: format!("✅ Allowed port {}/tcp+udp via iptables", port),
+                            error: None,
+                        }
+                    } else {
+                        args.push(proto_flag);
+                        args.push("--dport");
+                        args.push(&port_str);
+                        args.push("-j");
+                        args.push("ACCEPT");
+                        let (c, out) = run_cmd("iptables", &args);
+                        ToolResult {
+                            success: c == 0,
+                            output: if c == 0 { format!("✅ Allowed port {}/{} via iptables", port, proto_flag) } else { out.clone() },
+                            error: if c != 0 { Some(out) } else { None },
+                        }
+                    }
+                }
+            }
+            "deny_port" if confirm => {
+                let port = params["port"].as_u64().unwrap_or(0);
+                if port == 0 || port > 65535 {
+                    return ToolResult {
+                        success: false, output: String::new(),
+                        error: Some("Invalid port (1-65535)".into()),
+                    };
+                }
+                if has_ufw {
+                    let port_str = port.to_string();
+                    let (c, out) = run_cmd("ufw", &["deny", &port_str]);
+                    ToolResult {
+                        success: c == 0,
+                        output: if c == 0 { format!("✅ Denied port {}", port) } else { out.clone() },
+                        error: if c != 0 { Some(out) } else { None },
+                    }
+                } else {
+                    let port_str = port.to_string();
+                    let (c, out) = run_cmd("iptables", &["-A", "INPUT", "-p", "tcp", "--dport", &port_str, "-j", "DROP"]);
+                    ToolResult {
+                        success: c == 0,
+                        output: if c == 0 { format!("✅ Denied port {}/tcp via iptables", port) } else { out.clone() },
+                        error: if c != 0 { Some(out) } else { None },
+                    }
+                }
+            }
+            "allow_service" if confirm => {
+                let service = params["service"].as_str().unwrap_or("");
+                if service.is_empty() {
+                    return ToolResult {
+                        success: false, output: String::new(),
+                        error: Some("service required (e.g. ssh, http, https)".into()),
+                    };
+                }
+                let svc = match service {
+                    "ssh" | "22" => "ssh",
+                    "http" | "80" => "http",
+                    "https" | "443" => "https",
+                    "mysql" | "3306" => "mysql",
+                    "postgresql" | "5432" => "postgresql",
+                    "redis" | "6379" => "redis",
+                    "mongodb" | "27017" => "mongodb",
+                    other => other,
+                };
+                if has_ufw {
+                    let cmd = if svc == "ssh" || svc == "http" || svc == "https" || svc == "mysql" || svc == "postgresql" || svc == "redis" || svc == "mongodb" {
+                        format!("ufw allow {}", svc)
+                    } else {
+                        format!("ufw allow {}", svc)
+                    };
+                    let (c, out) = run_cmd("bash", &["-c", &cmd]);
+                    ToolResult {
+                        success: c == 0,
+                        output: if c == 0 { format!("✅ Allowed service: {}", service) } else { out.clone() },
+                        error: if c != 0 { Some(out) } else { None },
+                    }
+                } else {
+                    let port = match svc {
+                        "ssh" => "22", "http" => "80", "https" => "443",
+                        "mysql" => "3306", "postgresql" => "5432",
+                        "redis" => "6379", "mongodb" => "27017",
+                        other => other,
+                    };
+                    let (c, out) = run_cmd("iptables", &["-A", "INPUT", "-p", "tcp", "--dport", port, "-j", "ACCEPT"]);
+                    ToolResult {
+                        success: c == 0,
+                        output: if c == 0 { format!("✅ Allowed {} (port {}) via iptables", service, port) } else { out.clone() },
+                        error: if c != 0 { Some(out) } else { None },
+                    }
+                }
+            }
+            "delete_rule" if confirm => {
+                let rule_num = params["rule_num"].as_u64().unwrap_or(0);
+                if rule_num == 0 {
+                    return ToolResult {
+                        success: false, output: String::new(),
+                        error: Some("rule_num required — use list_rules to find the number".into()),
+                    };
+                }
+                if has_ufw {
+                    let num_str = rule_num.to_string();
+                    let full_cmd = format!("yes y | ufw delete {}", num_str);
+                    let (c2, out2) = run_cmd("bash", &["-c", &full_cmd]);
+                    ToolResult {
+                        success: c2 == 0,
+                        output: if c2 == 0 { format!("✅ Deleted rule #{}", rule_num) } else { out2.clone() },
+                        error: if c2 != 0 { Some(out2) } else { None },
+                    }
+                } else {
+                    let (c, out) = run_cmd("iptables", &["-D", "INPUT", &rule_num.to_string()]);
+                    ToolResult {
+                        success: c == 0,
+                        output: if c == 0 { format!("✅ Deleted iptables rule #{}", rule_num) } else { out.clone() },
+                        error: if c != 0 { Some(out) } else { None },
+                    }
+                }
+            }
+            _ if confirm => ToolResult {
+                success: false,
+                output: String::new(),
+                error: None,
+            },
+            _ => ToolResult {
+                success: false,
+                output: String::new(),
+                error: Some("⚠️ Firewall modification needs confirmation. Reply 'yes'.".into()),
+            },
+        }
+    }
+}
+
+// ── Certbot ──
+pub struct CertbotTool;
+impl CertbotTool {
+    pub fn new() -> Self {
+        Self
+    }
+}
+#[async_trait]
+impl SystemTool for CertbotTool {
+    fn name(&self) -> &str {
+        "certbot"
+    }
+    fn description(&self) -> &str {
+        "Manage SSL/TLS certificates: list, check_expiry, issue, renew, test_renewal, revoke (Let's Encrypt / Certbot)"
+    }
+    fn permission(&self) -> Permission {
+        Permission::Confirm
+    }
+    fn schema(&self) -> ToolSchema {
+        ToolSchema {
+            name: "certbot".into(),
+            description: self.description().into(),
+            parameters: serde_json::json!({"type":"object","properties":{"action":{"type":"string","enum":["list","check_expiry","issue","renew","test_renewal","revoke"]},"domains":{"type":"string","description":"Comma-separated domain list"},"email":{"type":"string"},"webroot":{"type":"string"}},"required":["action"]}),
+        }
+    }
+    async fn execute(&self, params: &serde_json::Value, confirm: bool) -> ToolResult {
+        let action = params["action"].as_str().unwrap_or("list");
+        // Check if certbot is installed
+        let has_certbot = run_cmd("certbot", &["--version"]).0 == 0;
+        if !has_certbot {
+            return ToolResult {
+                success: false,
+                output: String::new(),
+                error: Some("certbot not installed. Install: apt install certbot python3-certbot-nginx".into()),
+            };
+        }
+        match action {
+            "list" => {
+                let (c, out) = run_cmd("certbot", &["certificates"]);
+                if c != 0 {
+                    ToolResult {
+                        success: true,
+                        output: "No certificates found".into(),
+                        error: None,
+                    }
+                } else {
+                    ToolResult { success: true, output: out, error: None }
+                }
+            }
+            "check_expiry" => {
+                let domains = params["domains"].as_str().unwrap_or("");
+                if domains.is_empty() {
+                    // Check all certificates
+                    let (_, out) = run_cmd("certbot", &["certificates"]);
+                    // Parse expiry dates
+                    let mut summary = String::from("Certificate Expiry Summary:\n");
+                    for line in out.lines() {
+                        if line.contains("Expiry Date:") || line.contains("Domains:") || line.contains("Certificate Name:") {
+                            summary.push_str(&format!("  {}\n", line.trim()));
+                        }
+                    }
+                    if summary == "Certificate Expiry Summary:\n" {
+                        summary = "No certificates found".into();
+                    }
+                    ToolResult { success: true, output: summary, error: None }
+                } else {
+                    let (c, out) = run_cmd("certbot", &["certificates", "-d", domains]);
+                    ToolResult {
+                        success: c == 0,
+                        output: out,
+                        error: if c != 0 { Some(format!("No cert for: {}", domains)) } else { None },
+                    }
+                }
+            }
+            "issue" if confirm => {
+                let domains = params["domains"].as_str().unwrap_or("");
+                let email = params["email"].as_str().unwrap_or("");
+                if domains.is_empty() || email.is_empty() {
+                    return ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("domains and email required".into()),
+                    };
+                }
+                let mut args = vec![
+                    "certonly",
+                    "--non-interactive",
+                    "--agree-tos",
+                    "--email", email,
+                    "-d", domains,
+                ];
+                let webroot = params["webroot"].as_str().unwrap_or("");
+                if !webroot.is_empty() {
+                    args.push("--webroot");
+                    args.push("-w");
+                    args.push(webroot);
+                } else {
+                    args.push("--standalone");
+                }
+                let (c, out) = run_cmd("certbot", &args);
+                ToolResult {
+                    success: c == 0,
+                    output: if c == 0 {
+                        format!("✅ SSL certificate issued for: {}\nCert path: /etc/letsencrypt/live/{}/", domains, domains.split(',').next().unwrap_or("").trim())
+                    } else {
+                        out.clone()
+                    },
+                    error: if c != 0 { Some(out) } else { None },
+                }
+            }
+            "renew" if confirm => {
+                let (c, out) = run_cmd("certbot", &["renew"]);
+                ToolResult {
+                    success: c == 0,
+                    output: if c == 0 {
+                        "✅ All certificates renewed successfully".into()
+                    } else {
+                        out.clone()
+                    },
+                    error: if c != 0 {
+                        Some("Renewal failed. Check expiry dates and DNS.".into())
+                    } else {
+                        None
+                    },
+                }
+            }
+            "test_renewal" => {
+                let (c, out) = run_cmd("certbot", &["renew", "--dry-run"]);
+                ToolResult {
+                    success: c == 0,
+                    output: if c == 0 {
+                        "✅ Dry-run renewal successful — all certs can be renewed".into()
+                    } else {
+                        format!("⚠️ Dry-run failed:\n{}", out)
+                    },
+                    error: if c != 0 { Some("Some certificates cannot be renewed automatically".into()) } else { None },
+                }
+            }
+            "revoke" if confirm => {
+                let domains = params["domains"].as_str().unwrap_or("");
+                if domains.is_empty() {
+                    return ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("domains required".into()),
+                    };
+                }
+                let (c, out) = run_cmd("certbot", &["revoke", "--cert-name", domains, "--non-interactive"]);
+                ToolResult {
+                    success: c == 0,
+                    output: if c == 0 {
+                        format!("✅ Revoked certificate for: {}", domains)
+                    } else {
+                        out.clone()
+                    },
+                    error: if c != 0 { Some(out) } else { None },
+                }
+            }
+            _ if confirm => ToolResult {
+                success: false,
+                output: String::new(),
+                error: None,
+            },
+            _ => ToolResult {
+                success: false,
+                output: String::new(),
+                error: Some("⚠️ Certificate operation needs confirmation. Reply 'yes'.".into()),
+            },
+        }
+    }
+}
+
 // ── Registry ──
 pub struct ToolRegistry {
     tools: HashMap<String, Box<dyn SystemTool>>,
@@ -1617,6 +2053,10 @@ impl ToolRegistry {
         m.insert(st.name().into(), st);
         let wt: Box<dyn SystemTool> = Box::new(WebServerTool::new());
         m.insert(wt.name().into(), wt);
+        let fw: Box<dyn SystemTool> = Box::new(FirewallTool::new());
+        m.insert(fw.name().into(), fw);
+        let cb: Box<dyn SystemTool> = Box::new(CertbotTool::new());
+        m.insert(cb.name().into(), cb);
         Self { tools: m }
     }
     pub fn schemas(&self) -> Vec<ToolSchema> {

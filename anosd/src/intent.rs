@@ -35,6 +35,10 @@ pub enum Intent {
     Ssh,
     /// Web server (Nginx/Apache)
     WebServer,
+    /// Firewall (ufw/iptables)
+    Firewall,
+    /// SSL/TLS certificates (Certbot)
+    Certbot,
     /// General chat / no specific intent
     Chat,
 }
@@ -92,9 +96,6 @@ impl IntentClassifier {
                 &[
                     "bảo mật",
                     "security",
-                    "firewall",
-                    "ufw",
-                    "iptables",
                     "fail2ban",
                     "apparmor",
                     "selinux",
@@ -262,6 +263,43 @@ impl IntentClassifier {
                 "webserver",
                 0.90,
             ),
+            // Firewall
+            (
+                &[
+                    "firewall",
+                    "tường lửa",
+                    "ufw",
+                    "iptables",
+                    "nftables",
+                    "allow port",
+                    "mở port",
+                    "mở cổng",
+                    "block port",
+                    "chặn port",
+                    "đóng port",
+                ],
+                Intent::Firewall,
+                "firewall",
+                0.90,
+            ),
+            // Certbot
+            (
+                &[
+                    "ssl",
+                    "certificate",
+                    "certbot",
+                    "let's encrypt",
+                    "https",
+                    "tls",
+                    "chứng chỉ",
+                    "renew cert",
+                    "expiry",
+                    "hết hạn",
+                ],
+                Intent::Certbot,
+                "certbot",
+                0.90,
+            ),
             // System diagnostics — must come AFTER specific intents
             (
                 &[
@@ -333,6 +371,8 @@ impl IntentClassifier {
             Intent::Log => Some("log"),
             Intent::Ssh => Some("ssh"),
             Intent::WebServer => Some("webserver"),
+            Intent::Firewall => Some("firewall"),
+            Intent::Certbot => Some("certbot"),
             Intent::Chat => None,
         }
     }
