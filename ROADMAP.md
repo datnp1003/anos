@@ -23,14 +23,12 @@
 - CI Release Artifacts (binary arm64 + x86_64)
 
 ### 🔄 In Progress
-- ISO x86_64 CI build (fix YAML syntax)
+- Policy enforcement for 10 tools (policy.yaml → runtime)
 - Docker push ghcr.io (cần token write:packages)
 
 ### 📋 Next Up — Phase 2b (Anos Manager)
-- anos-manager: PID 1 spawn + monitor workers
-- Multi-user login (busybox getty + PAM)
-- Per-user workers (anosd --user={user} --socket={user})
-- Per-user AI memory + context riêng biệt
+- Multi-user workers: `anosd --user={user} --socket={user}`
+- Per-user memory + AI context riêng biệt
 - Per-user policy: admin / operator / guest
 - Per-user skills: tùy chỉnh theo role
 
