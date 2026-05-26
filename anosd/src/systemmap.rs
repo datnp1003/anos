@@ -281,7 +281,10 @@ impl SystemMap {
         if let Ok(o) = Command::new("apt").args(["list", "--upgradable"]).output() {
             let out = String::from_utf8_lossy(&o.stdout);
             if !out.contains("command not found") && !out.contains("No such file") {
-                return out.lines().filter(|l| !l.starts_with("Listing") && !l.is_empty()).count();
+                return out
+                    .lines()
+                    .filter(|l| !l.starts_with("Listing") && !l.is_empty())
+                    .count();
             }
         }
         // Try pacman (Arch)

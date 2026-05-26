@@ -53,7 +53,13 @@ pub fn run_cmd(cmd: &str, args: &[&str]) -> (i32, String) {
         Err(e) => {
             // Graceful message for "command not found" (os error 2)
             if e.raw_os_error() == Some(2) {
-                (-1, format!("⚠️ {}: command not found on this system. Try: sudo apt install {}", cmd, cmd))
+                (
+                    -1,
+                    format!(
+                        "⚠️ {}: command not found on this system. Try: sudo apt install {}",
+                        cmd, cmd
+                    ),
+                )
             } else {
                 (-1, e.to_string())
             }
@@ -791,15 +797,7 @@ impl SystemTool for UserTool {
                         error: Some("username required".into()),
                     };
                 }
-                let (c, out) = run_cmd(
-                    "useradd",
-                    &[
-                        "-m",
-                        "-s",
-                        shell,
-                        user,
-                    ],
-                );
+                let (c, out) = run_cmd("useradd", &["-m", "-s", shell, user]);
                 ToolResult {
                     success: c == 0,
                     output: if c == 0 {
@@ -880,10 +878,7 @@ impl SystemTool for UserTool {
                     };
                 }
                 // Generate a random password and set it
-                let (_, pw_out) = run_cmd(
-                    "openssl",
-                    &["rand", "-base64", "12"],
-                );
+                let (_, pw_out) = run_cmd("openssl", &["rand", "-base64", "12"]);
                 let pw = pw_out.trim().to_string();
                 if pw.is_empty() {
                     return ToolResult {
@@ -980,10 +975,7 @@ impl SystemTool for CronTool {
                 }
             }
             "list_timers" => {
-                let (_, out) = run_cmd(
-                    "systemctl",
-                    &["list-timers", "--no-pager", "--no-legend"],
-                );
+                let (_, out) = run_cmd("systemctl", &["list-timers", "--no-pager", "--no-legend"]);
                 ToolResult {
                     success: true,
                     output: out.lines().take(20).collect::<Vec<_>>().join("\n"),
@@ -1146,11 +1138,7 @@ impl SystemTool for LogTool {
             "journalctl" => {
                 let service = params["service"].as_str().unwrap_or("");
                 let lines_str = lines.to_string();
-                let mut args = vec![
-                    "--lines",
-                    &lines_str,
-                    "--no-pager",
-                ];
+                let mut args = vec!["--lines", &lines_str, "--no-pager"];
                 let unit_arg;
                 if !service.is_empty() {
                     unit_arg = format!("{}.service", service);
@@ -1165,10 +1153,7 @@ impl SystemTool for LogTool {
             }
             "tail" => {
                 let file = params["file"].as_str().unwrap_or("/var/log/syslog");
-                let (c, out) = run_cmd(
-                    "tail",
-                    &["-n", &lines.to_string(), file],
-                );
+                let (c, out) = run_cmd("tail", &["-n", &lines.to_string(), file]);
                 ToolResult {
                     success: c == 0,
                     output: out,
@@ -1180,10 +1165,7 @@ impl SystemTool for LogTool {
                 }
             }
             "logrotate_status" => {
-                let (c, out) = run_cmd(
-                    "logrotate",
-                    &["-d", "/etc/logrotate.conf"],
-                );
+                let (c, out) = run_cmd("logrotate", &["-d", "/etc/logrotate.conf"]);
                 if c != 0 {
                     // Try alternate path
                     let (c2, out2) = run_cmd("cat", &["/etc/logrotate.conf"]);
@@ -1247,7 +1229,10 @@ impl SystemTool for SshTool {
                     return ToolResult {
                         success: false,
                         output: String::new(),
-                        error: Some("Cannot read /etc/ssh/sshd_config — SSH server may not be installed".into()),
+                        error: Some(
+                            "Cannot read /etc/ssh/sshd_config — SSH server may not be installed"
+                                .into(),
+                        ),
                     };
                 }
                 // Filter out comments and blank lines
@@ -1287,13 +1272,7 @@ impl SystemTool for SshTool {
                 };
                 let (_, out) = run_cmd(
                     "find",
-                    &[
-                        &home,
-                        "-name",
-                        "authorized_keys",
-                        "-maxdepth",
-                        "3",
-                    ],
+                    &[&home, "-name", "authorized_keys", "-maxdepth", "3"],
                 );
                 if out.trim().is_empty() {
                     ToolResult {
@@ -1347,15 +1326,7 @@ impl SystemTool for SshTool {
                 let (c, out) = run_cmd(
                     "ssh-keygen",
                     &[
-                        "-t",
-                        "ed25519",
-                        "-f",
-                        &key_path,
-                        "-C",
-                        comment,
-                        "-N",
-                        "",
-                        "-q",
+                        "-t", "ed25519", "-f", &key_path, "-C", comment, "-N", "", "-q",
                     ],
                 );
                 ToolResult {
@@ -1622,13 +1593,19 @@ impl SystemTool for FirewallTool {
             "status" => {
                 if has_ufw {
                     let (_, out) = run_cmd("ufw", &["status", "verbose"]);
-                    ToolResult { success: true, output: out, error: None }
+                    ToolResult {
+                        success: true,
+                        output: out,
+                        error: None,
+                    }
                 } else {
                     let (_, out) = run_cmd("iptables", &["-L", "-n", "-v"]);
                     ToolResult {
                         success: true,
-                        output: format!("⚠️ ufw not installed (showing raw iptables)\n\n{}",
-                            out.lines().take(40).collect::<Vec<_>>().join("\n")),
+                        output: format!(
+                            "⚠️ ufw not installed (showing raw iptables)\n\n{}",
+                            out.lines().take(40).collect::<Vec<_>>().join("\n")
+                        ),
                         error: None,
                     }
                 }
@@ -1636,7 +1613,11 @@ impl SystemTool for FirewallTool {
             "list_rules" => {
                 if has_ufw {
                     let (_, out) = run_cmd("ufw", &["status", "numbered"]);
-                    ToolResult { success: true, output: out, error: None }
+                    ToolResult {
+                        success: true,
+                        output: out,
+                        error: None,
+                    }
                 } else {
                     let (_, out) = run_cmd("iptables", &["-L", "-n", "--line-numbers"]);
                     ToolResult {
@@ -1651,7 +1632,11 @@ impl SystemTool for FirewallTool {
                     let (c, out) = run_cmd("ufw", &["--force", "enable"]);
                     ToolResult {
                         success: c == 0,
-                        output: if c == 0 { "✅ Firewall enabled".into() } else { out.clone() },
+                        output: if c == 0 {
+                            "✅ Firewall enabled".into()
+                        } else {
+                            out.clone()
+                        },
                         error: if c != 0 { Some(out) } else { None },
                     }
                 } else {
@@ -1667,7 +1652,11 @@ impl SystemTool for FirewallTool {
                     let (c, out) = run_cmd("ufw", &["disable"]);
                     ToolResult {
                         success: c == 0,
-                        output: if c == 0 { "✅ Firewall disabled".into() } else { out.clone() },
+                        output: if c == 0 {
+                            "✅ Firewall disabled".into()
+                        } else {
+                            out.clone()
+                        },
                         error: if c != 0 { Some(out) } else { None },
                     }
                 } else {
@@ -1683,7 +1672,8 @@ impl SystemTool for FirewallTool {
                 let proto = params["protocol"].as_str().unwrap_or("tcp");
                 if port == 0 || port > 65535 {
                     return ToolResult {
-                        success: false, output: String::new(),
+                        success: false,
+                        output: String::new(),
                         error: Some("Invalid port (1-65535)".into()),
                     };
                 }
@@ -1711,7 +1701,11 @@ impl SystemTool for FirewallTool {
                     let (c, out) = run_cmd("bash", &["-c", &cmd_str]);
                     ToolResult {
                         success: c == 0,
-                        output: if c == 0 { format!("✅ Allowed port {}/{}", port, proto) } else { out.clone() },
+                        output: if c == 0 {
+                            format!("✅ Allowed port {}/{}", port, proto)
+                        } else {
+                            out.clone()
+                        },
                         error: if c != 0 { Some(out) } else { None },
                     }
                 } else {
@@ -1720,8 +1714,18 @@ impl SystemTool for FirewallTool {
                     let mut args = vec!["-A", "INPUT", "-p"];
                     if proto_flag.is_empty() {
                         // Both TCP+UDP: two rules
-                        let (c1, _o1) = run_cmd("iptables", &["-A", "INPUT", "-p", "tcp", "--dport", &port_str, "-j", "ACCEPT"]);
-                        let (c2, _o2) = run_cmd("iptables", &["-A", "INPUT", "-p", "udp", "--dport", &port_str, "-j", "ACCEPT"]);
+                        let (c1, _o1) = run_cmd(
+                            "iptables",
+                            &[
+                                "-A", "INPUT", "-p", "tcp", "--dport", &port_str, "-j", "ACCEPT",
+                            ],
+                        );
+                        let (c2, _o2) = run_cmd(
+                            "iptables",
+                            &[
+                                "-A", "INPUT", "-p", "udp", "--dport", &port_str, "-j", "ACCEPT",
+                            ],
+                        );
                         ToolResult {
                             success: c1 == 0 && c2 == 0,
                             output: format!("✅ Allowed port {}/tcp+udp via iptables", port),
@@ -1736,7 +1740,11 @@ impl SystemTool for FirewallTool {
                         let (c, out) = run_cmd("iptables", &args);
                         ToolResult {
                             success: c == 0,
-                            output: if c == 0 { format!("✅ Allowed port {}/{} via iptables", port, proto_flag) } else { out.clone() },
+                            output: if c == 0 {
+                                format!("✅ Allowed port {}/{} via iptables", port, proto_flag)
+                            } else {
+                                out.clone()
+                            },
                             error: if c != 0 { Some(out) } else { None },
                         }
                     }
@@ -1746,7 +1754,8 @@ impl SystemTool for FirewallTool {
                 let port = params["port"].as_u64().unwrap_or(0);
                 if port == 0 || port > 65535 {
                     return ToolResult {
-                        success: false, output: String::new(),
+                        success: false,
+                        output: String::new(),
                         error: Some("Invalid port (1-65535)".into()),
                     };
                 }
@@ -1755,15 +1764,28 @@ impl SystemTool for FirewallTool {
                     let (c, out) = run_cmd("ufw", &["deny", &port_str]);
                     ToolResult {
                         success: c == 0,
-                        output: if c == 0 { format!("✅ Denied port {}", port) } else { out.clone() },
+                        output: if c == 0 {
+                            format!("✅ Denied port {}", port)
+                        } else {
+                            out.clone()
+                        },
                         error: if c != 0 { Some(out) } else { None },
                     }
                 } else {
                     let port_str = port.to_string();
-                    let (c, out) = run_cmd("iptables", &["-A", "INPUT", "-p", "tcp", "--dport", &port_str, "-j", "DROP"]);
+                    let (c, out) = run_cmd(
+                        "iptables",
+                        &[
+                            "-A", "INPUT", "-p", "tcp", "--dport", &port_str, "-j", "DROP",
+                        ],
+                    );
                     ToolResult {
                         success: c == 0,
-                        output: if c == 0 { format!("✅ Denied port {}/tcp via iptables", port) } else { out.clone() },
+                        output: if c == 0 {
+                            format!("✅ Denied port {}/tcp via iptables", port)
+                        } else {
+                            out.clone()
+                        },
                         error: if c != 0 { Some(out) } else { None },
                     }
                 }
@@ -1772,7 +1794,8 @@ impl SystemTool for FirewallTool {
                 let service = params["service"].as_str().unwrap_or("");
                 if service.is_empty() {
                     return ToolResult {
-                        success: false, output: String::new(),
+                        success: false,
+                        output: String::new(),
                         error: Some("service required (e.g. ssh, http, https)".into()),
                     };
                 }
@@ -1787,7 +1810,14 @@ impl SystemTool for FirewallTool {
                     other => other,
                 };
                 if has_ufw {
-                    let cmd = if svc == "ssh" || svc == "http" || svc == "https" || svc == "mysql" || svc == "postgresql" || svc == "redis" || svc == "mongodb" {
+                    let cmd = if svc == "ssh"
+                        || svc == "http"
+                        || svc == "https"
+                        || svc == "mysql"
+                        || svc == "postgresql"
+                        || svc == "redis"
+                        || svc == "mongodb"
+                    {
                         format!("ufw allow {}", svc)
                     } else {
                         format!("ufw allow {}", svc)
@@ -1795,20 +1825,35 @@ impl SystemTool for FirewallTool {
                     let (c, out) = run_cmd("bash", &["-c", &cmd]);
                     ToolResult {
                         success: c == 0,
-                        output: if c == 0 { format!("✅ Allowed service: {}", service) } else { out.clone() },
+                        output: if c == 0 {
+                            format!("✅ Allowed service: {}", service)
+                        } else {
+                            out.clone()
+                        },
                         error: if c != 0 { Some(out) } else { None },
                     }
                 } else {
                     let port = match svc {
-                        "ssh" => "22", "http" => "80", "https" => "443",
-                        "mysql" => "3306", "postgresql" => "5432",
-                        "redis" => "6379", "mongodb" => "27017",
+                        "ssh" => "22",
+                        "http" => "80",
+                        "https" => "443",
+                        "mysql" => "3306",
+                        "postgresql" => "5432",
+                        "redis" => "6379",
+                        "mongodb" => "27017",
                         other => other,
                     };
-                    let (c, out) = run_cmd("iptables", &["-A", "INPUT", "-p", "tcp", "--dport", port, "-j", "ACCEPT"]);
+                    let (c, out) = run_cmd(
+                        "iptables",
+                        &["-A", "INPUT", "-p", "tcp", "--dport", port, "-j", "ACCEPT"],
+                    );
                     ToolResult {
                         success: c == 0,
-                        output: if c == 0 { format!("✅ Allowed {} (port {}) via iptables", service, port) } else { out.clone() },
+                        output: if c == 0 {
+                            format!("✅ Allowed {} (port {}) via iptables", service, port)
+                        } else {
+                            out.clone()
+                        },
                         error: if c != 0 { Some(out) } else { None },
                     }
                 }
@@ -1817,7 +1862,8 @@ impl SystemTool for FirewallTool {
                 let rule_num = params["rule_num"].as_u64().unwrap_or(0);
                 if rule_num == 0 {
                     return ToolResult {
-                        success: false, output: String::new(),
+                        success: false,
+                        output: String::new(),
                         error: Some("rule_num required — use list_rules to find the number".into()),
                     };
                 }
@@ -1827,14 +1873,22 @@ impl SystemTool for FirewallTool {
                     let (c2, out2) = run_cmd("bash", &["-c", &full_cmd]);
                     ToolResult {
                         success: c2 == 0,
-                        output: if c2 == 0 { format!("✅ Deleted rule #{}", rule_num) } else { out2.clone() },
+                        output: if c2 == 0 {
+                            format!("✅ Deleted rule #{}", rule_num)
+                        } else {
+                            out2.clone()
+                        },
                         error: if c2 != 0 { Some(out2) } else { None },
                     }
                 } else {
                     let (c, out) = run_cmd("iptables", &["-D", "INPUT", &rule_num.to_string()]);
                     ToolResult {
                         success: c == 0,
-                        output: if c == 0 { format!("✅ Deleted iptables rule #{}", rule_num) } else { out.clone() },
+                        output: if c == 0 {
+                            format!("✅ Deleted iptables rule #{}", rule_num)
+                        } else {
+                            out.clone()
+                        },
                         error: if c != 0 { Some(out) } else { None },
                     }
                 }
@@ -1886,7 +1940,10 @@ impl SystemTool for CertbotTool {
             return ToolResult {
                 success: false,
                 output: String::new(),
-                error: Some("certbot not installed. Install: apt install certbot python3-certbot-nginx".into()),
+                error: Some(
+                    "certbot not installed. Install: apt install certbot python3-certbot-nginx"
+                        .into(),
+                ),
             };
         }
         match action {
@@ -1899,7 +1956,11 @@ impl SystemTool for CertbotTool {
                         error: None,
                     }
                 } else {
-                    ToolResult { success: true, output: out, error: None }
+                    ToolResult {
+                        success: true,
+                        output: out,
+                        error: None,
+                    }
                 }
             }
             "check_expiry" => {
@@ -1910,20 +1971,31 @@ impl SystemTool for CertbotTool {
                     // Parse expiry dates
                     let mut summary = String::from("Certificate Expiry Summary:\n");
                     for line in out.lines() {
-                        if line.contains("Expiry Date:") || line.contains("Domains:") || line.contains("Certificate Name:") {
+                        if line.contains("Expiry Date:")
+                            || line.contains("Domains:")
+                            || line.contains("Certificate Name:")
+                        {
                             summary.push_str(&format!("  {}\n", line.trim()));
                         }
                     }
                     if summary == "Certificate Expiry Summary:\n" {
                         summary = "No certificates found".into();
                     }
-                    ToolResult { success: true, output: summary, error: None }
+                    ToolResult {
+                        success: true,
+                        output: summary,
+                        error: None,
+                    }
                 } else {
                     let (c, out) = run_cmd("certbot", &["certificates", "-d", domains]);
                     ToolResult {
                         success: c == 0,
                         output: out,
-                        error: if c != 0 { Some(format!("No cert for: {}", domains)) } else { None },
+                        error: if c != 0 {
+                            Some(format!("No cert for: {}", domains))
+                        } else {
+                            None
+                        },
                     }
                 }
             }
@@ -1941,8 +2013,10 @@ impl SystemTool for CertbotTool {
                     "certonly",
                     "--non-interactive",
                     "--agree-tos",
-                    "--email", email,
-                    "-d", domains,
+                    "--email",
+                    email,
+                    "-d",
+                    domains,
                 ];
                 let webroot = params["webroot"].as_str().unwrap_or("");
                 if !webroot.is_empty() {
@@ -1988,7 +2062,11 @@ impl SystemTool for CertbotTool {
                     } else {
                         format!("⚠️ Dry-run failed:\n{}", out)
                     },
-                    error: if c != 0 { Some("Some certificates cannot be renewed automatically".into()) } else { None },
+                    error: if c != 0 {
+                        Some("Some certificates cannot be renewed automatically".into())
+                    } else {
+                        None
+                    },
                 }
             }
             "revoke" if confirm => {
@@ -2000,7 +2078,10 @@ impl SystemTool for CertbotTool {
                         error: Some("domains required".into()),
                     };
                 }
-                let (c, out) = run_cmd("certbot", &["revoke", "--cert-name", domains, "--non-interactive"]);
+                let (c, out) = run_cmd(
+                    "certbot",
+                    &["revoke", "--cert-name", domains, "--non-interactive"],
+                );
                 ToolResult {
                     success: c == 0,
                     output: if c == 0 {

@@ -481,7 +481,10 @@ fn check_updates(check: &WatchCheck) -> CheckResult {
         }
         "dnf" | "yum" => {
             if let Ok(out) = Command::new(pm).args(["check-update", "-q"]).output() {
-                let cnt = String::from_utf8_lossy(&out.stdout).lines().filter(|l| !l.is_empty()).count();
+                let cnt = String::from_utf8_lossy(&out.stdout)
+                    .lines()
+                    .filter(|l| !l.is_empty())
+                    .count();
                 (cnt, cnt)
             } else {
                 (0, 0)
@@ -499,7 +502,10 @@ fn check_updates(check: &WatchCheck) -> CheckResult {
             // apt (default / fallback)
             if let Ok(out) = Command::new("apt").args(["list", "--upgradable"]).output() {
                 let text = String::from_utf8_lossy(&out.stdout);
-                let cnt = text.lines().filter(|l| !l.starts_with("Listing") && !l.is_empty()).count();
+                let cnt = text
+                    .lines()
+                    .filter(|l| !l.starts_with("Listing") && !l.is_empty())
+                    .count();
                 let s = text.lines().filter(|l| l.contains("-security")).count();
                 (cnt, s)
             } else {

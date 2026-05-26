@@ -208,27 +208,14 @@ impl IntentClassifier {
             ),
             // Cron
             (
-                &[
-                    "cron",
-                    "scheduled",
-                    "lịch",
-                    "định kỳ",
-                    "timer",
-                    "crontab",
-                ],
+                &["cron", "scheduled", "lịch", "định kỳ", "timer", "crontab"],
                 Intent::Cron,
                 "cron",
                 0.90,
             ),
             // Log
             (
-                &[
-                    "log",
-                    "nhật ký",
-                    "journalctl",
-                    "syslog",
-                    "tail",
-                ],
+                &["log", "nhật ký", "journalctl", "syslog", "tail"],
                 Intent::Log,
                 "log",
                 0.88,
