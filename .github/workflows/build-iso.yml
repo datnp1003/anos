@@ -75,13 +75,7 @@ jobs:
 
           # GRUB
           mkdir -p "$WORK/boot/grub"
-          cat > "$WORK/boot/grub/grub.cfg" << 'ENDGRUB'
-      set timeout=5
-      menuentry "🦾 AnosOS" {
-          linux /boot/vmlinuz console=tty1 quiet
-          initrd /boot/initrd.img
-      }
-      ENDGRUB
+          printf 'set timeout=5\nmenuentry "🦾 AnosOS" {\n    linux /boot/vmlinuz console=tty1 quiet\n    initrd /boot/initrd.img\n}\n' > "$WORK/boot/grub/grub.cfg"
 
           # ISO
           ISO="anos-os-linux-amd64.iso"
