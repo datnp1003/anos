@@ -675,6 +675,920 @@ impl SystemTool for NetworkTool {
     }
 }
 
+// ── User ──
+pub struct UserTool;
+impl UserTool {
+    pub fn new() -> Self {
+        Self
+    }
+}
+#[async_trait]
+impl SystemTool for UserTool {
+    fn name(&self) -> &str {
+        "user"
+    }
+    fn description(&self) -> &str {
+        "Manage users and groups: list, info, create, delete, modify, password, list_groups, group_info"
+    }
+    fn permission(&self) -> Permission {
+        Permission::Confirm
+    }
+    fn schema(&self) -> ToolSchema {
+        ToolSchema {
+            name: "user".into(),
+            description: self.description().into(),
+            parameters: serde_json::json!({"type":"object","properties":{"action":{"type":"string","enum":["list","info","create","delete","modify","password","list_groups","group_info"]},"username":{"type":"string"},"groupname":{"type":"string"},"shell":{"type":"string"},"home":{"type":"string"}},"required":["action"]}),
+        }
+    }
+    async fn execute(&self, params: &serde_json::Value, confirm: bool) -> ToolResult {
+        let action = params["action"].as_str().unwrap_or("list");
+        match action {
+            "list" => {
+                let (_, out) = run_cmd("getent", &["passwd"]);
+                let users: Vec<&str> = out
+                    .lines()
+                    .filter_map(|l| {
+                        let p: Vec<&str> = l.split(':').collect();
+                        if p.len() >= 7 && p[2].parse::<u32>().unwrap_or(0) >= 1000 {
+                            Some(p[0])
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                ToolResult {
+                    success: true,
+                    output: users.join("\n"),
+                    error: None,
+                }
+            }
+            "info" => {
+                let user = params["username"].as_str().unwrap_or("");
+                if user.is_empty() {
+                    return ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("username required".into()),
+                    };
+                }
+                let (c, out) = run_cmd("id", &[user]);
+                ToolResult {
+                    success: c == 0,
+                    output: out,
+                    error: if c != 0 {
+                        Some(format!("User '{}' not found", user))
+                    } else {
+                        None
+                    },
+                }
+            }
+            "list_groups" => {
+                let (_, out) = run_cmd("getent", &["group"]);
+                let groups: Vec<&str> = out
+                    .lines()
+                    .filter_map(|l| {
+                        let p: Vec<&str> = l.split(':').collect();
+                        if p.len() >= 4 && p[2].parse::<u32>().unwrap_or(0) >= 1000 {
+                            Some(p[0])
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                ToolResult {
+                    success: true,
+                    output: groups.join("\n"),
+                    error: None,
+                }
+            }
+            "group_info" => {
+                let group = params["groupname"].as_str().unwrap_or("");
+                if group.is_empty() {
+                    return ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("groupname required".into()),
+                    };
+                }
+                let (c, out) = run_cmd("getent", &["group", group]);
+                ToolResult {
+                    success: c == 0,
+                    output: out,
+                    error: if c != 0 {
+                        Some(format!("Group '{}' not found", group))
+                    } else {
+                        None
+                    },
+                }
+            }
+            "create" if confirm => {
+                let user = params["username"].as_str().unwrap_or("");
+                let shell = params["shell"].as_str().unwrap_or("/bin/bash");
+                if user.is_empty() {
+                    return ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("username required".into()),
+                    };
+                }
+                let (c, out) = run_cmd(
+                    "useradd",
+                    &[
+                        "-m",
+                        "-s",
+                        shell,
+                        user,
+                    ],
+                );
+                ToolResult {
+                    success: c == 0,
+                    output: if c == 0 {
+                        format!("✅ Created user: {}", user)
+                    } else {
+                        out.clone()
+                    },
+                    error: if c != 0 { Some(out) } else { None },
+                }
+            }
+            "delete" if confirm => {
+                let user = params["username"].as_str().unwrap_or("");
+                if user.is_empty() {
+                    return ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("username required".into()),
+                    };
+                }
+                let (c, out) = run_cmd("userdel", &["-r", user]);
+                ToolResult {
+                    success: c == 0,
+                    output: if c == 0 {
+                        format!("✅ Deleted user: {}", user)
+                    } else {
+                        out.clone()
+                    },
+                    error: if c != 0 { Some(out) } else { None },
+                }
+            }
+            "modify" if confirm => {
+                let user = params["username"].as_str().unwrap_or("");
+                let shell = params["shell"].as_str();
+                let home = params["home"].as_str();
+                if user.is_empty() {
+                    return ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("username required".into()),
+                    };
+                }
+                let mut args: Vec<&str> = vec![];
+                let mut changes = Vec::new();
+                if let Some(s) = shell {
+                    args.extend_from_slice(&["-s", s]);
+                    changes.push(format!("shell={}", s));
+                }
+                if let Some(h) = home {
+                    args.extend_from_slice(&["-d", h]);
+                    changes.push(format!("home={}", h));
+                }
+                if changes.is_empty() {
+                    return ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("Nothing to modify (use shell= or home=)".into()),
+                    };
+                }
+                args.push(user);
+                let (c, out) = run_cmd("usermod", &args);
+                ToolResult {
+                    success: c == 0,
+                    output: if c == 0 {
+                        format!("✅ Modified user {}: {}", user, changes.join(", "))
+                    } else {
+                        out.clone()
+                    },
+                    error: if c != 0 { Some(out) } else { None },
+                }
+            }
+            "password" if confirm => {
+                let user = params["username"].as_str().unwrap_or("");
+                if user.is_empty() {
+                    return ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("username required".into()),
+                    };
+                }
+                // Generate a random password and set it
+                let (_, pw_out) = run_cmd(
+                    "openssl",
+                    &["rand", "-base64", "12"],
+                );
+                let pw = pw_out.trim().to_string();
+                if pw.is_empty() {
+                    return ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("Failed to generate password".into()),
+                    };
+                }
+                let (c, out) = run_cmd("chpasswd", &[]);
+                if c != 0 || out.contains("not found") {
+                    // Fallback: use passwd --stdin
+                    let echo_cmd = format!("echo '{}:{}' | chpasswd", user, pw);
+                    let (c2, out2) = run_cmd("bash", &["-c", &echo_cmd]);
+                    ToolResult {
+                        success: c2 == 0,
+                        output: if c2 == 0 {
+                            format!("✅ Password set for {} (temp: {})", user, pw)
+                        } else {
+                            out2.clone()
+                        },
+                        error: if c2 != 0 { Some(out2) } else { None },
+                    }
+                } else {
+                    let echo_cmd2 = format!("echo '{}:{}' | chpasswd", user, pw);
+                    let (c3, out3) = run_cmd("bash", &["-c", &echo_cmd2]);
+                    ToolResult {
+                        success: c3 == 0,
+                        output: if c3 == 0 {
+                            format!("✅ Password set for {} (temp: {})", user, pw)
+                        } else {
+                            out3.clone()
+                        },
+                        error: if c3 != 0 { Some(out3) } else { None },
+                    }
+                }
+            }
+            _ if confirm => ToolResult {
+                success: false,
+                output: String::new(),
+                error: None,
+            },
+            _ => ToolResult {
+                success: false,
+                output: String::new(),
+                error: Some("⚠️ User operation needs confirmation. Reply 'yes'.".into()),
+            },
+        }
+    }
+}
+
+// ── Cron ──
+pub struct CronTool;
+impl CronTool {
+    pub fn new() -> Self {
+        Self
+    }
+}
+#[async_trait]
+impl SystemTool for CronTool {
+    fn name(&self) -> &str {
+        "cron"
+    }
+    fn description(&self) -> &str {
+        "Manage scheduled tasks: list, add, remove, list_timers (crontab + systemd timers)"
+    }
+    fn permission(&self) -> Permission {
+        Permission::Confirm
+    }
+    fn schema(&self) -> ToolSchema {
+        ToolSchema {
+            name: "cron".into(),
+            description: self.description().into(),
+            parameters: serde_json::json!({"type":"object","properties":{"action":{"type":"string","enum":["list","add","remove","list_timers"]},"schedule":{"type":"string","description":"Cron expression e.g. '0 4 * * *'"},"command":{"type":"string","description":"Command to run"},"comment":{"type":"string","description":"Comment for the cron entry"}},"required":["action"]}),
+        }
+    }
+    async fn execute(&self, params: &serde_json::Value, confirm: bool) -> ToolResult {
+        let action = params["action"].as_str().unwrap_or("list");
+        match action {
+            "list" => {
+                // Show current user's crontab
+                let (c, out) = run_cmd("crontab", &["-l"]);
+                if c != 0 {
+                    ToolResult {
+                        success: true,
+                        output: "No crontab configured for current user".into(),
+                        error: None,
+                    }
+                } else {
+                    ToolResult {
+                        success: true,
+                        output: out,
+                        error: None,
+                    }
+                }
+            }
+            "list_timers" => {
+                let (_, out) = run_cmd(
+                    "systemctl",
+                    &["list-timers", "--no-pager", "--no-legend"],
+                );
+                ToolResult {
+                    success: true,
+                    output: out.lines().take(20).collect::<Vec<_>>().join("\n"),
+                    error: None,
+                }
+            }
+            "add" if confirm => {
+                let schedule = params["schedule"].as_str().unwrap_or("");
+                let command = params["command"].as_str().unwrap_or("");
+                let comment = params["comment"].as_str().unwrap_or("");
+                if schedule.is_empty() || command.is_empty() {
+                    return ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("schedule and command required".into()),
+                    };
+                }
+                // Get existing crontab
+                let (_, existing) = run_cmd("crontab", &["-l"]);
+                let mut new_cron = if existing.is_empty() || existing.contains("no crontab") {
+                    String::new()
+                } else {
+                    existing.trim().to_string()
+                };
+                if !new_cron.is_empty() && !new_cron.ends_with('\n') {
+                    new_cron.push('\n');
+                }
+                if !comment.is_empty() {
+                    new_cron.push_str(&format!("# {}\n", comment));
+                }
+                new_cron.push_str(&format!("{} {}\n", schedule, command));
+                let tmp = std::env::temp_dir().join(format!("anos-cron-{}", std::process::id()));
+                if std::fs::write(&tmp, &new_cron).is_err() {
+                    return ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("Failed to write temp crontab".into()),
+                    };
+                }
+                let tmp_str = tmp.to_string_lossy().to_string();
+                let (c, out) = run_cmd("crontab", &[&tmp_str]);
+                let _ = std::fs::remove_file(&tmp);
+                ToolResult {
+                    success: c == 0,
+                    output: if c == 0 {
+                        format!("✅ Added cron: {} {}", schedule, command)
+                    } else {
+                        out.clone()
+                    },
+                    error: if c != 0 { Some(out) } else { None },
+                }
+            }
+            "remove" if confirm => {
+                let command = params["command"].as_str().unwrap_or("");
+                if command.is_empty() {
+                    // Remove entire crontab
+                    let (c, out) = run_cmd("crontab", &["-r"]);
+                    ToolResult {
+                        success: c == 0,
+                        output: if c == 0 {
+                            "✅ Removed all cron jobs".into()
+                        } else {
+                            out.clone()
+                        },
+                        error: if c != 0 { Some(out) } else { None },
+                    }
+                } else {
+                    // Remove lines matching command
+                    let (_, existing) = run_cmd("crontab", &["-l"]);
+                    let filtered: String = existing
+                        .lines()
+                        .filter(|l| !l.contains(command))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    let tmp =
+                        std::env::temp_dir().join(format!("anos-cron-{}", std::process::id()));
+                    if std::fs::write(&tmp, &filtered).is_err() {
+                        return ToolResult {
+                            success: false,
+                            output: String::new(),
+                            error: Some("Failed to write temp crontab".into()),
+                        };
+                    }
+                    let tmp_str = tmp.to_string_lossy().to_string();
+                    let (c, out) = run_cmd("crontab", &[&tmp_str]);
+                    let _ = std::fs::remove_file(&tmp);
+                    ToolResult {
+                        success: c == 0,
+                        output: if c == 0 {
+                            format!("✅ Removed cron jobs matching: {}", command)
+                        } else {
+                            out.clone()
+                        },
+                        error: if c != 0 { Some(out) } else { None },
+                    }
+                }
+            }
+            _ if confirm => ToolResult {
+                success: false,
+                output: String::new(),
+                error: None,
+            },
+            _ => ToolResult {
+                success: false,
+                output: String::new(),
+                error: Some("⚠️ Cron modification needs confirmation. Reply 'yes'.".into()),
+            },
+        }
+    }
+}
+
+// ── Log ──
+pub struct LogTool;
+impl LogTool {
+    pub fn new() -> Self {
+        Self
+    }
+}
+#[async_trait]
+impl SystemTool for LogTool {
+    fn name(&self) -> &str {
+        "log"
+    }
+    fn description(&self) -> &str {
+        "View and inspect logs: journalctl, tail, list_logs, logrotate_status"
+    }
+    fn permission(&self) -> Permission {
+        Permission::ReadOnly
+    }
+    fn schema(&self) -> ToolSchema {
+        ToolSchema {
+            name: "log".into(),
+            description: self.description().into(),
+            parameters: serde_json::json!({"type":"object","properties":{"action":{"type":"string","enum":["journalctl","tail","list_logs","logrotate_status"]},"service":{"type":"string"},"file":{"type":"string"},"lines":{"type":"integer","default":50}},"required":["action"]}),
+        }
+    }
+    async fn execute(&self, params: &serde_json::Value, _confirm: bool) -> ToolResult {
+        let action = params["action"].as_str().unwrap_or("list_logs");
+        let lines = params["lines"].as_u64().unwrap_or(50).min(200) as usize;
+        match action {
+            "list_logs" => {
+                let (_, out) = run_cmd(
+                    "find",
+                    &["/var/log", "-type", "f", "-name", "*.log", "-maxdepth", "2"],
+                );
+                let (_, out2) = run_cmd(
+                    "find",
+                    &["/var/log", "-type", "f", "-name", "*.gz", "-maxdepth", "2"],
+                );
+                ToolResult {
+                    success: true,
+                    output: format!(
+                        "=== Log files ===\n{}\n\n=== Rotated (gzipped) ===\n{}",
+                        out.lines().take(20).collect::<Vec<_>>().join("\n"),
+                        out2.lines().take(10).collect::<Vec<_>>().join("\n")
+                    ),
+                    error: None,
+                }
+            }
+            "journalctl" => {
+                let service = params["service"].as_str().unwrap_or("");
+                let lines_str = lines.to_string();
+                let mut args = vec![
+                    "--lines",
+                    &lines_str,
+                    "--no-pager",
+                ];
+                let unit_arg;
+                if !service.is_empty() {
+                    unit_arg = format!("{}.service", service);
+                    args.extend_from_slice(&["-u", &unit_arg]);
+                }
+                let (_, out) = run_cmd("journalctl", &args);
+                ToolResult {
+                    success: true,
+                    output: out,
+                    error: None,
+                }
+            }
+            "tail" => {
+                let file = params["file"].as_str().unwrap_or("/var/log/syslog");
+                let (c, out) = run_cmd(
+                    "tail",
+                    &["-n", &lines.to_string(), file],
+                );
+                ToolResult {
+                    success: c == 0,
+                    output: out,
+                    error: if c != 0 {
+                        Some(format!("Cannot read: {}", file))
+                    } else {
+                        None
+                    },
+                }
+            }
+            "logrotate_status" => {
+                let (c, out) = run_cmd(
+                    "logrotate",
+                    &["-d", "/etc/logrotate.conf"],
+                );
+                if c != 0 {
+                    // Try alternate path
+                    let (c2, out2) = run_cmd("cat", &["/etc/logrotate.conf"]);
+                    ToolResult {
+                        success: c2 == 0,
+                        output: if c2 == 0 {
+                            format!("Logrotate config loaded ({} bytes)", out2.len())
+                        } else {
+                            "Logrotate not installed or configured".into()
+                        },
+                        error: None,
+                    }
+                } else {
+                    ToolResult {
+                        success: true,
+                        output: out,
+                        error: None,
+                    }
+                }
+            }
+            _ => ToolResult {
+                success: false,
+                output: String::new(),
+                error: Some(format!("Unknown log action: {}", action)),
+            },
+        }
+    }
+}
+
+// ── SSH ──
+pub struct SshTool;
+impl SshTool {
+    pub fn new() -> Self {
+        Self
+    }
+}
+#[async_trait]
+impl SystemTool for SshTool {
+    fn name(&self) -> &str {
+        "ssh"
+    }
+    fn description(&self) -> &str {
+        "Manage SSH: show_config, status, keys, generate_key, restart"
+    }
+    fn permission(&self) -> Permission {
+        Permission::Confirm
+    }
+    fn schema(&self) -> ToolSchema {
+        ToolSchema {
+            name: "ssh".into(),
+            description: self.description().into(),
+            parameters: serde_json::json!({"type":"object","properties":{"action":{"type":"string","enum":["show_config","status","keys","generate_key","restart"]},"user":{"type":"string"},"comment":{"type":"string"}},"required":["action"]}),
+        }
+    }
+    async fn execute(&self, params: &serde_json::Value, confirm: bool) -> ToolResult {
+        let action = params["action"].as_str().unwrap_or("status");
+        match action {
+            "show_config" => {
+                let (c, out) = run_cmd("cat", &["/etc/ssh/sshd_config"]);
+                if c != 0 {
+                    return ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("Cannot read /etc/ssh/sshd_config — SSH server may not be installed".into()),
+                    };
+                }
+                // Filter out comments and blank lines
+                let active: Vec<&str> = out
+                    .lines()
+                    .filter(|l| !l.trim().is_empty() && !l.trim().starts_with('#'))
+                    .collect();
+                ToolResult {
+                    success: true,
+                    output: active.join("\n"),
+                    error: None,
+                }
+            }
+            "status" => {
+                let (_, out) = run_cmd("systemctl", &["status", "sshd"]);
+                if out.contains("not-found") || out.contains("could not be found") {
+                    let (_, out2) = run_cmd("systemctl", &["status", "ssh"]);
+                    ToolResult {
+                        success: true,
+                        output: out2,
+                        error: None,
+                    }
+                } else {
+                    ToolResult {
+                        success: true,
+                        output: out,
+                        error: None,
+                    }
+                }
+            }
+            "keys" => {
+                let user = params["user"].as_str().unwrap_or("root");
+                let home = if user == "root" {
+                    "/root".to_string()
+                } else {
+                    format!("/home/{}", user)
+                };
+                let (_, out) = run_cmd(
+                    "find",
+                    &[
+                        &home,
+                        "-name",
+                        "authorized_keys",
+                        "-maxdepth",
+                        "3",
+                    ],
+                );
+                if out.trim().is_empty() {
+                    ToolResult {
+                        success: true,
+                        output: format!("No authorized_keys found for {} in {}", user, home),
+                        error: None,
+                    }
+                } else {
+                    // Read each authorized_keys file
+                    let mut result = String::new();
+                    for path in out.lines() {
+                        let (_, content) = run_cmd("cat", &[path]);
+                        if !content.trim().is_empty() {
+                            let n = content.lines().count();
+                            result.push_str(&format!(
+                                "=== {} ({} key{}) ===\n{}\n",
+                                path,
+                                n,
+                                if n > 1 { "s" } else { "" },
+                                content
+                                    .lines()
+                                    .map(|l| {
+                                        let parts: Vec<&str> = l.split_whitespace().collect();
+                                        if parts.len() >= 3 {
+                                            format!("  Type: {} | Comment: {}", parts[0], parts[2])
+                                        } else {
+                                            format!("  {}", l)
+                                        }
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            ));
+                        }
+                    }
+                    ToolResult {
+                        success: true,
+                        output: result,
+                        error: None,
+                    }
+                }
+            }
+            "generate_key" if confirm => {
+                let user = params["user"].as_str().unwrap_or("root");
+                let comment = params["comment"].as_str().unwrap_or("anos-generated");
+                let home = if user == "root" {
+                    "/root".to_string()
+                } else {
+                    format!("/home/{}", user)
+                };
+                let key_path = format!("{}/.ssh/id_ed25519", home);
+                let (c, out) = run_cmd(
+                    "ssh-keygen",
+                    &[
+                        "-t",
+                        "ed25519",
+                        "-f",
+                        &key_path,
+                        "-C",
+                        comment,
+                        "-N",
+                        "",
+                        "-q",
+                    ],
+                );
+                ToolResult {
+                    success: c == 0,
+                    output: if c == 0 {
+                        format!(
+                            "✅ Generated ED25519 key for {} at {}\nPublic key: {}.pub",
+                            user, key_path, key_path
+                        )
+                    } else {
+                        out.clone()
+                    },
+                    error: if c != 0 { Some(out) } else { None },
+                }
+            }
+            "restart" if confirm => {
+                let (c, _out) = run_cmd("systemctl", &["restart", "sshd"]);
+                if c != 0 {
+                    let (c2, out2) = run_cmd("systemctl", &["restart", "ssh"]);
+                    ToolResult {
+                        success: c2 == 0,
+                        output: if c2 == 0 {
+                            "✅ SSH service restarted".into()
+                        } else {
+                            out2.clone()
+                        },
+                        error: if c2 != 0 { Some(out2) } else { None },
+                    }
+                } else {
+                    ToolResult {
+                        success: true,
+                        output: "✅ SSH service restarted".into(),
+                        error: None,
+                    }
+                }
+            }
+            _ if confirm => ToolResult {
+                success: false,
+                output: String::new(),
+                error: None,
+            },
+            _ => ToolResult {
+                success: false,
+                output: String::new(),
+                error: Some("⚠️ SSH operation needs confirmation. Reply 'yes'.".into()),
+            },
+        }
+    }
+}
+
+// ── WebServer ──
+pub struct WebServerTool;
+impl WebServerTool {
+    pub fn new() -> Self {
+        Self
+    }
+}
+#[async_trait]
+impl SystemTool for WebServerTool {
+    fn name(&self) -> &str {
+        "webserver"
+    }
+    fn description(&self) -> &str {
+        "Manage web server (Nginx/Apache): status, test_config, reload, list_sites, restart"
+    }
+    fn permission(&self) -> Permission {
+        Permission::Confirm
+    }
+    fn schema(&self) -> ToolSchema {
+        ToolSchema {
+            name: "webserver".into(),
+            description: self.description().into(),
+            parameters: serde_json::json!({"type":"object","properties":{"action":{"type":"string","enum":["status","test_config","reload","list_sites","restart","detect"]}},"required":["action"]}),
+        }
+    }
+    async fn execute(&self, params: &serde_json::Value, confirm: bool) -> ToolResult {
+        let action = params["action"].as_str().unwrap_or("detect");
+        // Auto-detect web server
+        let server = {
+            let (c, _) = run_cmd("nginx", &["-v"]);
+            if c == 0 {
+                "nginx"
+            } else {
+                let (c2, _) = run_cmd("apache2ctl", &["-v"]);
+                if c2 == 0 {
+                    "apache"
+                } else {
+                    let (c3, _) = run_cmd("httpd", &["-v"]);
+                    if c3 == 0 {
+                        "apache"
+                    } else {
+                        ""
+                    }
+                }
+            }
+        };
+        match action {
+            "detect" => {
+                if server.is_empty() {
+                    ToolResult {
+                        success: true,
+                        output: "No web server detected. Install: apt install nginx".into(),
+                        error: None,
+                    }
+                } else {
+                    let (_, ver) = match server {
+                        "nginx" => run_cmd("nginx", &["-v"]),
+                        _ => run_cmd("apache2ctl", &["-v"]),
+                    };
+                    ToolResult {
+                        success: true,
+                        output: format!("Detected: {} — {}", server, ver),
+                        error: None,
+                    }
+                }
+            }
+            "status" => {
+                if server.is_empty() {
+                    return ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("No web server detected".into()),
+                    };
+                }
+                let (_, out) = run_cmd("systemctl", &["status", server]);
+                ToolResult {
+                    success: true,
+                    output: out,
+                    error: None,
+                }
+            }
+            "test_config" => {
+                if server.is_empty() {
+                    return ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("No web server detected".into()),
+                    };
+                }
+                let (c, out) = match server {
+                    "nginx" => run_cmd("nginx", &["-t"]),
+                    _ => run_cmd("apache2ctl", &["configtest"]),
+                };
+                ToolResult {
+                    success: c == 0,
+                    output: out,
+                    error: if c != 0 {
+                        Some("Config test failed — check syntax".into())
+                    } else {
+                        None
+                    },
+                }
+            }
+            "list_sites" => {
+                if server.is_empty() {
+                    return ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("No web server detected".into()),
+                    };
+                }
+                let (path, suffix) = match server {
+                    "nginx" => ("/etc/nginx/sites-enabled", ""),
+                    _ => ("/etc/apache2/sites-enabled", ".conf"),
+                };
+                let (_, out) = run_cmd("ls", &["-1", path]);
+                let sites: Vec<&str> = out
+                    .lines()
+                    .filter(|l| !l.is_empty())
+                    .map(|l| l.trim_end_matches(suffix))
+                    .collect();
+                ToolResult {
+                    success: true,
+                    output: if sites.is_empty() {
+                        "No sites enabled".into()
+                    } else {
+                        format!("{} enabled sites:\n{}", server, sites.join("\n"))
+                    },
+                    error: None,
+                }
+            }
+            "reload" if confirm => {
+                if server.is_empty() {
+                    return ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("No web server detected".into()),
+                    };
+                }
+                let (c, out) = run_cmd("systemctl", &["reload", server]);
+                ToolResult {
+                    success: c == 0,
+                    output: if c == 0 {
+                        format!("✅ {} reloaded", server)
+                    } else {
+                        out.clone()
+                    },
+                    error: if c != 0 { Some(out) } else { None },
+                }
+            }
+            "restart" if confirm => {
+                if server.is_empty() {
+                    return ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some("No web server detected".into()),
+                    };
+                }
+                let (c, out) = run_cmd("systemctl", &["restart", server]);
+                ToolResult {
+                    success: c == 0,
+                    output: if c == 0 {
+                        format!("✅ {} restarted", server)
+                    } else {
+                        out.clone()
+                    },
+                    error: if c != 0 { Some(out) } else { None },
+                }
+            }
+            _ if confirm => ToolResult {
+                success: false,
+                output: String::new(),
+                error: None,
+            },
+            _ => ToolResult {
+                success: false,
+                output: String::new(),
+                error: Some("⚠️ Web server operation needs confirmation. Reply 'yes'.".into()),
+            },
+        }
+    }
+}
+
 // ── Registry ──
 pub struct ToolRegistry {
     tools: HashMap<String, Box<dyn SystemTool>>,
@@ -693,6 +1607,16 @@ impl ToolRegistry {
         m.insert(fs.name().into(), fs);
         let nt: Box<dyn SystemTool> = Box::new(NetworkTool::new());
         m.insert(nt.name().into(), nt);
+        let ut: Box<dyn SystemTool> = Box::new(UserTool::new());
+        m.insert(ut.name().into(), ut);
+        let ct: Box<dyn SystemTool> = Box::new(CronTool::new());
+        m.insert(ct.name().into(), ct);
+        let lt: Box<dyn SystemTool> = Box::new(LogTool::new());
+        m.insert(lt.name().into(), lt);
+        let st: Box<dyn SystemTool> = Box::new(SshTool::new());
+        m.insert(st.name().into(), st);
+        let wt: Box<dyn SystemTool> = Box::new(WebServerTool::new());
+        m.insert(wt.name().into(), wt);
         Self { tools: m }
     }
     pub fn schemas(&self) -> Vec<ToolSchema> {

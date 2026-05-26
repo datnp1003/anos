@@ -25,6 +25,16 @@ pub enum Intent {
     Gui,
     /// Self-upgrade
     SelfUpgrade,
+    /// User management
+    User,
+    /// Cron / scheduled tasks
+    Cron,
+    /// Logs
+    Log,
+    /// SSH
+    Ssh,
+    /// Web server (Nginx/Apache)
+    WebServer,
     /// General chat / no specific intent
     Chat,
 }
@@ -175,6 +185,83 @@ impl IntentClassifier {
                 "self-upgrade",
                 0.95,
             ),
+            // User
+            (
+                &[
+                    "user",
+                    "người dùng",
+                    "tạo user",
+                    "xóa user",
+                    "useradd",
+                    "usermod",
+                    "group",
+                    "nhóm",
+                    "password",
+                    "mật khẩu",
+                    "tài khoản",
+                    "account",
+                ],
+                Intent::User,
+                "user",
+                0.90,
+            ),
+            // Cron
+            (
+                &[
+                    "cron",
+                    "scheduled",
+                    "lịch",
+                    "định kỳ",
+                    "timer",
+                    "crontab",
+                ],
+                Intent::Cron,
+                "cron",
+                0.90,
+            ),
+            // Log
+            (
+                &[
+                    "log",
+                    "nhật ký",
+                    "journalctl",
+                    "syslog",
+                    "tail",
+                ],
+                Intent::Log,
+                "log",
+                0.88,
+            ),
+            // SSH
+            (
+                &[
+                    "ssh",
+                    "key",
+                    "khóa",
+                    "public key",
+                    "sshd",
+                    "ssh key",
+                    "authorized_keys",
+                ],
+                Intent::Ssh,
+                "ssh",
+                0.90,
+            ),
+            // WebServer
+            (
+                &[
+                    "nginx",
+                    "apache",
+                    "httpd",
+                    "web server",
+                    "website",
+                    "site",
+                    "virtual host",
+                ],
+                Intent::WebServer,
+                "webserver",
+                0.90,
+            ),
             // System diagnostics — must come AFTER specific intents
             (
                 &[
@@ -241,6 +328,11 @@ impl IntentClassifier {
             Intent::Security => Some("security"),
             Intent::Gui => Some("gui"),
             Intent::SelfUpgrade => Some("self-upgrade"),
+            Intent::User => Some("user"),
+            Intent::Cron => Some("cron"),
+            Intent::Log => Some("log"),
+            Intent::Ssh => Some("ssh"),
+            Intent::WebServer => Some("webserver"),
             Intent::Chat => None,
         }
     }

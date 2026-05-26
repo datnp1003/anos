@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.11.0 — 2026-05-26
+
+🦾 Server OS Foundation: 5 new system tools.
+
+### Added
+- 👤 **UserTool** — `list`, `info`, `create`, `delete`, `modify`, `password`, `list_groups`, `group_info`
+- ⏰ **CronTool** — `list`, `add`, `remove`, `list_timers` (crontab + systemd timers support)
+- 📋 **LogTool** — `list_logs`, `journalctl`, `tail`, `logrotate_status`
+- 🔑 **SshTool** — `show_config`, `status`, `keys`, `generate_key`, `restart`
+- 🌐 **WebServerTool** — `detect`, `status`, `test_config`, `list_sites`, `reload`, `restart` (auto-detect Nginx vs Apache)
+- 🎯 Intent classifier updated with 5 new intent categories (User, Cron, Log, Ssh, WebServer)
+- 📚 5 new skills: user, cron, log, ssh, webserver with Vietnamese language support
+- 🔧 CI: build-iso.yml YAML syntax fix (heredoc → printf for GRUB config)
+
+### Changed
+- ToolRegistry now registers 10 tools (was 5)
+- Total tools.rs: ~1644 lines (+924 lines of new tool implementations)
+
+### Verified
+- `anosd` build + all 9 tests pass
+
 ## v0.10.2 — 2026-05-25
 
 Cross-distribution package manager fix.

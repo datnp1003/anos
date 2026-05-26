@@ -1,8 +1,10 @@
-# 🦾 Anos — AI Native Operating System
+# 🦾 Anos — AI Native Linux Agent
 
 Anos is an AI-native control plane for Linux. It runs as a Rust daemon plus CLI and lets an operator inspect, monitor, repair, and automate a Linux host through natural language and explicit system tools.
 
-> Current scope: Anos is an AI agent layer for Linux, not a kernel, init system, or systemd replacement yet.
+> 🖥️ **Looking for the OS?** → [datnp1003/anos-os](https://github.com/datnp1003/anos-os) — bootable ISO, Docker image, multi-user login
+>
+> This repo is the **agent layer** (daemon + CLI + skills). The OS layer is in a separate repo for independent release cycles.
 
 ## Features
 
